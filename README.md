@@ -35,7 +35,10 @@ aicsbench run --agents codex,claude:<model> --task task-management-api \
               --stacks fastapi,laravel --trials 5 --auth subscription --dry-run
 aicsbench run --config examples/experiment.yaml --dry-run
 aicsbench results [--agent X --stack Y --mode standard --not-rate-limited ...]
-aicsbench report                     # Phase 3
+aicsbench compare --run RUN_ID --by stack [--agent codex --model gpt-6-luna]
+aicsbench export --run RUN_ID --format csv > trials.csv
+aicsbench export --run RUN_ID --format jsonl > trials.jsonl
+aicsbench report --run RUN_ID --by stack > report.md
 ```
 
 The `fastapi-latest`, `express-latest`, and `laravel13-boost` stacks pin the
