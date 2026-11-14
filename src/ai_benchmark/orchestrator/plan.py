@@ -1,7 +1,7 @@
 """Expanding an experiment configuration into an ordered list of trials.
 
 Pure logic with no side effects, so the full matrix can be inspected with
-``benchmark run --dry-run`` before anything executes.
+``aicsbench run --dry-run`` before anything executes.
 """
 
 from __future__ import annotations

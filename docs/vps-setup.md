@@ -57,7 +57,7 @@ sudo apt-get install -y git python3 python3-venv
 git clone <your repo url> ai-benchmark && cd ai-benchmark
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e .
-benchmark validate
+aicsbench validate
 ```
 
 ## 5. Provide credentials (subscription mode)
@@ -96,7 +96,7 @@ Load the env file before running and confirm everything is found:
 
 ```bash
 set -a; . ~/.config/ai-benchmark.env; set +a
-benchmark agents --check --auth subscription
+aicsbench agents --check --auth subscription
 ```
 
 Exact file locations and variable names are confirmed per agent in Phase 2;
@@ -114,12 +114,12 @@ Runs take hours, so use `tmux` so they survive SSH disconnects:
 ```bash
 sudo apt-get install -y tmux && tmux new -s bench
 set -a; . ~/.config/ai-benchmark.env; set +a
-benchmark run -c examples/experiment.yaml --dry-run   # check the plan
-benchmark run -c examples/experiment.yaml
+aicsbench run -c examples/experiment.yaml --dry-run   # check the plan
+aicsbench run -c examples/experiment.yaml
 ```
 
 Subscription usage limits are shared across trials. Trials that hit one are
-flagged and can be excluded: `benchmark results --not-rate-limited`.
+flagged and can be excluded: `aicsbench results --not-rate-limited`.
 
 ## 7. Housekeeping
 

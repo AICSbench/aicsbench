@@ -14,7 +14,7 @@ languages and frameworks.
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e '.[dev]'
-benchmark --help
+aicsbench --help
 ```
 
 Requires Python 3.10+ and Docker (the `docker` CLI talking to a local daemon) to run trials.
@@ -27,18 +27,18 @@ subscription (default) or an API key. See
 ## CLI
 
 ```bash
-benchmark tasks                      # list benchmark tasks
-benchmark stacks                     # list language/framework stacks
-benchmark agents [--check --auth subscription]  # list adapters, check credentials
-benchmark validate [FILES...]        # validate task/stack/experiment files
-benchmark run --agents codex,claude:<model> --task task-management-api \
+aicsbench tasks                      # list benchmark tasks
+aicsbench stacks                     # list language/framework stacks
+aicsbench agents [--check --auth subscription]  # list adapters, check credentials
+aicsbench validate [FILES...]        # validate task/stack/experiment files
+aicsbench run --agents codex,claude:<model> --task task-management-api \
               --stacks fastapi,laravel --trials 5 --auth subscription --dry-run
-benchmark run --config examples/experiment.yaml --dry-run
-benchmark results [--agent X --stack Y --mode standard --not-rate-limited ...]
-benchmark compare --run RUN_ID --by stack [--agent codex --model gpt-6-luna]
-benchmark export --run RUN_ID --format csv > trials.csv
-benchmark export --run RUN_ID --format jsonl > trials.jsonl
-benchmark report --run RUN_ID --by stack > report.md
+aicsbench run --config examples/experiment.yaml --dry-run
+aicsbench results [--agent X --stack Y --mode standard --not-rate-limited ...]
+aicsbench compare --run RUN_ID --by stack [--agent codex --model gpt-6-luna]
+aicsbench export --run RUN_ID --format csv > trials.csv
+aicsbench export --run RUN_ID --format jsonl > trials.jsonl
+aicsbench report --run RUN_ID --by stack > report.md
 ```
 
 The `fastapi-latest`, `express-latest`, and `laravel13-boost` stacks pin the
@@ -50,7 +50,7 @@ this stack starts from a scaffold; compare it separately from the empty-folder
 `laravel` (Laravel 11) baseline. For example:
 
 ```bash
-benchmark run --agents codex:gpt-6-luna --task task-management-api \
+aicsbench run --agents codex:gpt-6-luna --task task-management-api \
               --stacks fastapi-latest,laravel13-boost,express-latest \
               --trials 20 --auth subscription
 ```
@@ -68,7 +68,7 @@ such as `--results-dir`.
 
 ```
 src/ai_benchmark/
-  cli/            Typer entry point (`benchmark`)
+  cli/            Typer entry point (`aicsbench`)
   config/         Pydantic schemas: tasks, stacks, experiments, platform settings; YAML/JSON loader
   models/         Enums, metric schemas (with explicit availability), result records
   agents/         AgentAdapter interface, registry, built-in claude/codex/opencode adapters

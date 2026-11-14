@@ -397,18 +397,18 @@ Start with a functional CLI.
 Example commands:
 
 ```
-benchmark agents
-benchmark stacks
-benchmark tasks
-benchmark run
-benchmark results
-benchmark report
+aicsbench agents
+aicsbench stacks
+aicsbench tasks
+aicsbench run
+aicsbench results
+aicsbench report
 ```
 
 Example experiment:
 
 ```
-benchmark run \
+aicsbench run \
   --agents codex,claude,opencode \
   --task task-management-api \
   --stacks laravel,fastapi,express \
@@ -486,7 +486,7 @@ Phase 3:
 * Multiple trials.
 
 * Metrics aggregation, including the comparison query (compare by one
-  dimension, filter the rest) and a `benchmark compare` command.
+  dimension, filter the rest) and an `aicsbench compare` command.
 
 * Flat per-trial exports (CSV/JSONL) that a dashboard can pivot.
 

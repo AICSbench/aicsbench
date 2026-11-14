@@ -1,4 +1,4 @@
-# Example experiment. Run with: benchmark run --config examples/experiment.yaml --dry-run
+# Example experiment. Run with: aicsbench run --config examples/experiment.yaml --dry-run
 task: task-management-api
 agents:
   - agent: codex

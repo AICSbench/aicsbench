@@ -27,6 +27,12 @@ def test_listing_commands() -> None:
         assert needle in result.output
 
 
+def test_version_uses_command_name() -> None:
+    result = invoke("version")
+    assert result.exit_code == 0
+    assert result.output.startswith("aicsbench ")
+
+
 def test_validate_catalog_and_files() -> None:
     assert invoke("validate").exit_code == 0
     assert invoke("validate", str(REPO_ROOT / "examples" / "experiment.yaml")).exit_code == 0

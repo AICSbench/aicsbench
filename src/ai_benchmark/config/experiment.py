@@ -1,4 +1,4 @@
-"""Experiment configuration: what a single ``benchmark run`` executes."""
+"""Experiment configuration: what a single ``aicsbench run`` executes."""
 
 from __future__ import annotations
 

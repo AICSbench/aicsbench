@@ -1,6 +1,6 @@
 # Trial execution
 
-What `benchmark run` does for each trial, in order. The code lives in
+What `aicsbench run` does for each trial, in order. The code lives in
 `orchestrator/orchestrator.py` (`run_trial`) and `environment/docker.py`.
 
 ## 1. Images
@@ -72,7 +72,7 @@ trials are kept for debugging.
 
 ## Watching a run
 
-`benchmark run` logs each phase of a trial (images, containers, setup, agent,
+`aicsbench run` logs each phase of a trial (images, containers, setup, agent,
 acceptance tests, final status with its duration). While the agent works, it
 also logs a heartbeat every 30 seconds with the elapsed time against the
 limit, the number of output lines and a summary of the agent's latest event.

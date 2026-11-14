@@ -39,7 +39,7 @@ revoke.
 
 ## Auth modes
 
-Set once per experiment with `auth_mode` (or `benchmark run --auth`). Every
+Set once per experiment with `auth_mode` (or `aicsbench run --auth`). Every
 agent in a run uses the same mode, so results stay comparable; run the other
 mode as a separate experiment.
 
@@ -48,7 +48,7 @@ mode as a separate experiment.
 | Credential | OAuth token or login file from a subscription | Provider API key |
 | Cost metric | Always **unavailable** ("subscription auth: no per-run cost is billed"). A cost figure the CLI prints anyway is kept as `provider_specific.agent_reported_cost_usd`. | Recorded when the agent reports it, else unavailable |
 | Parallelism | Sequential (usage limits are shared across runs) | Sequential for now |
-| Limit hits | Recorded as `rate_limit_events` on the trial; a trial the limit stopped gets status `rate_limited`. Filter with `benchmark results --rate-limited / --not-rate-limited`. | Same |
+| Limit hits | Recorded as `rate_limit_events` on the trial; a trial the limit stopped gets status `rate_limited`. Filter with `aicsbench results --rate-limited / --not-rate-limited`. | Same |
 
 Config files only ever contain **names** of environment variables and
 **paths** of credential files, never secret values (`AgentAuthConfig` rejects
@@ -78,6 +78,6 @@ between trials, switch that file to `bind_rw`.
 Credential files default to `mode: copy` (a fresh copy per trial). If a CLI
 must write refreshed tokens back, use `bind_rw` for that file.
 
-`benchmark agents --check --auth subscription` reports which credentials are
-present on this host, and `benchmark run` pre-flight refuses to start when one
+`aicsbench agents --check --auth subscription` reports which credentials are
+present on this host, and `aicsbench run` pre-flight refuses to start when one
 is missing.
