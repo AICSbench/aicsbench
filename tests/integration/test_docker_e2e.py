@@ -195,8 +195,24 @@ class ReferenceAgent(ScriptedAgent):
         return {p.name: p.read_text() for p in REFERENCE.iterdir() if p.is_file()}
 
 
+class ShortenerReferenceAgent(ScriptedAgent):
+    """Writes the reference URL-shortener implementation."""
+
+    def files(self) -> dict[str, str]:
+        directory = FIXTURES / "reference-shortener"
+        return {p.name: p.read_text() for p in directory.iterdir() if p.is_file()}
+
+
+@pytest.mark.parametrize(
+    ("task_id", "agent_type", "minimum_tests"),
+    [
+        ("task-management-api", ReferenceAgent, 50),
+        ("url-shortener-api", ShortenerReferenceAgent, 16),
+    ],
+)
 def test_reference_solution_passes_the_real_suite(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    task_id: str, agent_type: type[ScriptedAgent], minimum_tests: int,
 ) -> None:
     """The shipped fastapi stack + task suite accept a correct implementation.
 
@@ -214,7 +230,7 @@ def test_reference_solution_passes_the_real_suite(
         text = text.replace("dockerfile: fastapi/Dockerfile\n", f"image: {image}\n")
         stack_file.write_text(text.replace("build_context: fastapi/\n", ""))
     if TESTER_IMAGE:
-        task_file = tasks / "task-management-api" / "task.yaml"
+        task_file = tasks / task_id / "task.yaml"
         text = task_file.read_text().replace(
             "  suite: acceptance/\n", f"  suite: acceptance/\n  image: {TESTER_IMAGE}\n"
         )
@@ -228,14 +244,14 @@ def test_reference_solution_passes_the_real_suite(
     )
     registry = AgentRegistry()
     registry._entry_points_loaded = True
-    registry.register(ReferenceAgent)
+    registry.register(agent_type)
     env = DockerExecutionEnvironment(settings.docker, run_id="it-ref")
     o = BenchmarkOrchestrator(
         settings, SpecCatalog(settings), registry, env, JsonResultStore(settings.results_dir)
     )
     cfg = ExperimentConfig.model_validate(
         {
-            "task": "task-management-api",
+            "task": task_id,
             "agents": [{"agent": "scripted", "model": "none"}],
             "stacks": ["fastapi"],
             "trials": 1,
@@ -245,4 +261,4 @@ def test_reference_solution_passes_the_real_suite(
     o.run(cfg, run_id="it-ref")
     [r] = list(o.store.iter_trials())
     assert r.status is TrialStatus.PASSED, (r.status, r.error, r.log_files)
-    assert (r.metrics.quality.tests_passed.value or 0) >= 50
+    assert (r.metrics.quality.tests_passed.value or 0) >= minimum_tests

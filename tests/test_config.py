@@ -31,6 +31,9 @@ def test_catalog_loads_examples(settings: PlatformSettings) -> None:
     task = catalog.get_task("task-management-api")
     assert task.source_dir is not None
     assert all(catalog.get_stack(s) for s in task.supported_stacks)
+    shortener = catalog.get_task("url-shortener-api")
+    assert set(shortener.supported_stacks) == set(task.supported_stacks)
+    assert shortener.acceptance_tests.suite is not None
 
 
 def test_unknown_task_lists_known(settings: PlatformSettings) -> None:
