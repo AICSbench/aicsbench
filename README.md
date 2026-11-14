@@ -1,7 +1,7 @@
 # AI Coding Benchmark Platform
 
 An open-source platform that measures and compares how productive AI coding
-agents (Codex CLI, Claude Code, OpenCode, and more) are across programming
+agents (Codex CLI, Claude Code, OpenCode, Gemini CLI, and more) are across programming
 languages and frameworks.
 
 > **Status: Phase 2 (execution).** Trials run in Docker end to end with the
@@ -71,7 +71,7 @@ src/ai_benchmark/
   cli/            Typer entry point (`aicsbench`)
   config/         Pydantic schemas: tasks, stacks, experiments, platform settings; YAML/JSON loader
   models/         Enums, metric schemas (with explicit availability), result records
-  agents/         AgentAdapter interface, registry, built-in claude/codex/opencode adapters
+  agents/         AgentAdapter interface, registry, built-in claude/codex/opencode/gemini adapters
   environment/    ExecutionEnvironment interface, Docker implementation, per-trial workspaces
   orchestrator/   Planning (randomized, seeded), trial execution, git metrics, JUnit parsing
   storage/        ResultStore interface + atomic JSON file store

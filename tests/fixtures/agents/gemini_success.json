@@ -1,0 +1,18 @@
+{
+  "session_id": "gemini-session-1",
+  "response": "Implemented the API.",
+  "stats": {
+    "models": {
+      "gemini-3-pro": {
+        "api": {"totalRequests": 3},
+        "tokens": {"input": 700, "prompt": 1000, "candidates": 200, "cached": 300, "thoughts": 50, "tool": 0, "total": 1250}
+      },
+      "gemini-3-flash": {
+        "api": {"totalRequests": 1},
+        "tokens": {"input": 150, "prompt": 200, "candidates": 20, "cached": 50, "thoughts": 10, "tool": 0, "total": 230}
+      }
+    },
+    "tools": {"totalCalls": 3},
+    "files": {"totalLinesAdded": 20, "totalLinesRemoved": 0}
+  }
+}

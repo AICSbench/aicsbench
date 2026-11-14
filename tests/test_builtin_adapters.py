@@ -11,8 +11,10 @@ from ai_benchmark.agents import AgentTask, default_registry
 from ai_benchmark.agents.claude_code import ClaudeCodeAdapter
 from ai_benchmark.agents.cli import CliAgentAdapter
 from ai_benchmark.agents.codex import CodexAdapter
+from ai_benchmark.agents.gemini import GeminiAdapter
 from ai_benchmark.agents.opencode import OpenCodeAdapter
 from ai_benchmark.environment.base import CommandResult
+from ai_benchmark.errors import ConfigurationError
 from ai_benchmark.models import AuthMode
 
 SAMPLES = Path(__file__).parent / "fixtures" / "agents"
@@ -58,10 +60,10 @@ def run(adapter: CliAgentAdapter, tmp_path: Path, sample: str, exit_code: int = 
 
 
 def test_builtins_are_registered() -> None:
-    assert {"claude", "codex", "opencode"} <= set(default_registry.names())
+    assert {"claude", "codex", "gemini", "opencode"} <= set(default_registry.names())
 
 
-@pytest.mark.parametrize("cls", [ClaudeCodeAdapter, CodexAdapter, OpenCodeAdapter])
+@pytest.mark.parametrize("cls", [ClaudeCodeAdapter, CodexAdapter, GeminiAdapter, OpenCodeAdapter])
 def test_image_layer_pins_version_and_needs_node(cls: type[CliAgentAdapter]) -> None:
     layer = cls().image_layer()
     assert layer.cli_version == cls.cli_version
@@ -102,6 +104,15 @@ def test_opencode_api_key_variable_is_configurable() -> None:
         adapter.validate_options({"nope": 1})
 
 
+def test_gemini_api_key_only() -> None:
+    adapter = GeminiAdapter()
+    assert adapter.capabilities().supported_auth_modes == (AuthMode.API_KEY,)
+    assert adapter.default_auth(AuthMode.API_KEY).env == ["GEMINI_API_KEY"]
+    with pytest.raises(ConfigurationError, match="api_key"):
+        adapter.default_auth(AuthMode.SUBSCRIPTION)
+    assert adapter.image_layer().env["GEMINI_SANDBOX"] == "false"
+
+
 # -- command lines ------------------------------------------------------------------
 
 
@@ -135,8 +146,17 @@ def test_opencode_command(tmp_path: Path) -> None:
     assert cmd[-2:] == ["--", "Build the API"]
 
 
+def test_gemini_command(tmp_path: Path) -> None:
+    cmd = GeminiAdapter().build_command(task(tmp_path, model="gemini-3-pro"))
+    assert cmd == [
+        "gemini", "--approval-mode", "yolo", "--extensions", "none",
+        "--output-format", "json", "--model", "gemini-3-pro",
+        "--prompt", "Build the API",
+    ]
+
+
 def test_defaults_omit_model_and_effort(tmp_path: Path) -> None:
-    for adapter in (ClaudeCodeAdapter(), CodexAdapter(), OpenCodeAdapter()):
+    for adapter in (ClaudeCodeAdapter(), CodexAdapter(), GeminiAdapter(), OpenCodeAdapter()):
         cmd = adapter.build_command(task(tmp_path))
         assert "--model" not in cmd and "--effort" not in cmd and "--variant" not in cmd
 
@@ -217,8 +237,32 @@ def test_opencode_rate_limit(tmp_path: Path) -> None:
     assert not result.usage.turns.is_available
 
 
+def test_gemini_success(tmp_path: Path) -> None:
+    result, _ = run(GeminiAdapter(), tmp_path, "gemini_success.json")
+    assert result.succeeded and result.error is None
+    tokens = result.usage.tokens
+    assert tokens.accounting_scheme == "google"
+    assert tokens.input_tokens.value == 1200
+    assert tokens.cached_input_tokens.value == 350
+    assert tokens.output_tokens.value == 220
+    assert tokens.reasoning_tokens.value == 60
+    assert tokens.total_tokens.value == 1480
+    assert result.reported_model.value == "gemini-3-pro"
+    assert "gemini-3-flash" in (result.reported_model.note or "")
+    assert not result.usage.cost.is_available
+    assert not result.usage.turns.is_available
+    assert result.raw["session_id"] == "gemini-session-1"
+    assert "Build the API" not in result.command and "<prompt>" in result.command
+
+
+def test_gemini_rate_limit(tmp_path: Path) -> None:
+    result, _ = run(GeminiAdapter(), tmp_path, "gemini_rate_limit.json", exit_code=1)
+    assert result.stopped_by_rate_limit and result.error == "429 quota exceeded"
+    assert not result.usage.tokens.input_tokens.is_available
+
+
 def test_garbage_output_is_unavailable_not_zero(tmp_path: Path) -> None:
-    for adapter in (ClaudeCodeAdapter(), CodexAdapter(), OpenCodeAdapter()):
+    for adapter in (ClaudeCodeAdapter(), CodexAdapter(), GeminiAdapter(), OpenCodeAdapter()):
         runner = StubRunner("segmentation fault\n", exit_code=139)
         result = adapter.run(task(tmp_path), runner)
         assert not result.succeeded
