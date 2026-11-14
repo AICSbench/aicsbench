@@ -4,7 +4,7 @@
 
 | Area | Where | Notes |
 | --- | --- | --- |
-| Project structure and packaging | `pyproject.toml`, `src/ai_benchmark/` | `benchmark` console script; Python 3.10+ |
+| Project structure and packaging | `pyproject.toml`, `src/ai_benchmark/` | `aicsbench` console script; Python 3.10+ |
 | Configuration schema | `config/` | Task (`BenchmarkSpec`), stack (`StackSpec`), experiment (`ExperimentConfig`), platform settings (`PlatformSettings`). Unknown keys are rejected; images must be pinned; MCP servers are only allowed in `best_ecosystem` mode. |
 | Metric schema | `models/metrics.py` | Every metric is a `Metric[T]` with `available` / `unavailable` / `not_applicable` and a source (`agent_reported`, `measured`, `derived`). Defaults are *unavailable*, never zero. Token usage carries an `accounting_scheme` so counts are not compared across providers. |
 | Result records | `models/results.py` | `TrialResult` and `RunManifest` capture agent/model/version, stack versions, image digest, tooling mode, enabled tools/MCP servers, seed, logs and raw provider data. |
@@ -35,7 +35,7 @@
    fixed) and model comparison (stack fixed), defined in ARCHITECTURE.md
    under "Comparison Views". Trial results already carry `resolved_model`,
    `ComparisonDimension` and `TrialResult.dimension_value()` /
-   `comparability_key()`; the aggregation query and `benchmark compare`
+   `comparability_key()`; the aggregation query and `aicsbench compare`
    come in Phase 3.
 
 ## Resolved in Phase 2

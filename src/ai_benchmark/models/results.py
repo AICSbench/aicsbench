@@ -141,7 +141,7 @@ class TrialResult(BaseModel):
 
 
 class RunManifest(BaseModel):
-    """Metadata for one ``benchmark run`` invocation (a set of trials)."""
+    """Metadata for one ``aicsbench run`` invocation (a set of trials)."""
 
     model_config = ConfigDict(extra="forbid")
 

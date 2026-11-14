@@ -7,7 +7,7 @@ Run date: 13 November 2026 (UTC). Task: `task-management-api` version 2. Agent: 
 The main run is `results/20261113T152047Z-3a2559/` (seed `3004873834`). Its manifest and 60 trial JSON files record the full configuration and measurements. One Laravel trial (`t-350283695e7b`) stopped during setup when Packagist timed out; it did not reach the agent or acceptance tests. The replacement trial is `t-b8eb26831b45` in `results/20261113T180853Z-1518c0/`. This replacement was a separate single-trial run with its own generated seed `2617491874`, not a replay of the original trial ID.
 
 ```bash
-benchmark run --agents codex:gpt-6-luna --task task-management-api \
+aicsbench run --agents codex:gpt-6-luna --task task-management-api \
   --stacks fastapi-latest,laravel13-boost,express-latest \
   --trials 20 --auth subscription --seed 3004873834
 ```

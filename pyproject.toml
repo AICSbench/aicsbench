@@ -21,7 +21,7 @@ dependencies = [
 dev = ["pytest>=8.0", "ruff>=0.4", "mypy>=1.10", "types-PyYAML"]
 
 [project.scripts]
-benchmark = "ai_benchmark.cli.app:main"
+aicsbench = "ai_benchmark.cli.app:main"
 
 # Third-party agent adapters register themselves here, so the core never
 # needs to change when a new agent is added:

@@ -1,4 +1,4 @@
-"""The ``benchmark`` command-line entry point."""
+"""The ``aicsbench`` command-line entry point."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from ai_benchmark.storage.base import ResultFilter
 from ai_benchmark.storage.json_store import JsonResultStore
 
 app = typer.Typer(
-    name="benchmark",
+    name="aicsbench",
     help="Benchmark AI coding agents across programming languages and frameworks.",
     no_args_is_help=True,
     add_completion=False,
@@ -107,7 +107,7 @@ def main_callback(
 @app.command()
 def version() -> None:
     """Show the platform version."""
-    console.print(f"ai-benchmark {__version__}")
+    console.print(f"aicsbench {__version__}")
 
 
 @app.command()

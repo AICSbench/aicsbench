@@ -1,1 +1,1 @@
-"""Command-line interface (``benchmark``)."""
+"""Command-line interface (``aicsbench``)."""
