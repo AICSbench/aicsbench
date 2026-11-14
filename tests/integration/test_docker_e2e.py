@@ -128,7 +128,26 @@ class ScriptedAgent(AgentAdapter):
         return []
 
 
-def test_full_trial_in_docker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+class RepairScriptedAgent(ScriptedAgent):
+    def files(self) -> dict[str, str]:
+        writes = getattr(self, "_writes", 0) + 1
+        self._writes = writes
+        files = super().files()
+        if writes == 1:
+            files["app.py"] = files["app.py"].replace(
+                'body = {"status": "ok"}', 'body = {"status": "broken"}'
+            )
+        return files
+
+
+@pytest.mark.parametrize(
+    "agent_cls,parallel,repairs",
+    [(ScriptedAgent, 1, 0), (RepairScriptedAgent, 2, 1)],
+)
+def test_full_trial_in_docker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    agent_cls: type[ScriptedAgent], parallel: int, repairs: int,
+) -> None:
     monkeypatch.setenv("SCRIPTED_TOKEN", "do-not-leak")
     tasks = tmp_path / "tasks" / "hello"
     tasks.mkdir(parents=True)
@@ -157,23 +176,30 @@ def test_full_trial_in_docker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     )
     registry = AgentRegistry()
     registry._entry_points_loaded = True
-    registry.register(ScriptedAgent)
+    registry.register(agent_cls)
     env = DockerExecutionEnvironment(settings.docker, run_id="it")
     o = BenchmarkOrchestrator(
         settings, SpecCatalog(settings), registry, env, JsonResultStore(settings.results_dir)
     )
     cfg = ExperimentConfig.model_validate(
-        {"task": "hello", "agents": [{"agent": "scripted", "model": "none"}], "stacks": ["py"]}
+        {"task": "hello", "agents": [{"agent": "scripted", "model": "none"}],
+         "stacks": ["py"], "trials": parallel, "max_parallel": parallel,
+         "max_repairs": repairs}
     )
     summary = o.run(cfg, run_id="it")
-    [r] = list(o.store.iter_trials())
-    assert r.status is TrialStatus.PASSED, (r.error, r.log_files)
-    assert summary.by_status == {"passed": 1}
-    assert r.metrics.quality.tests_passed.value == 2
-    assert r.metrics.code.files_changed.value == 2
-    assert r.agent.version == "scripted-1"
-    who = Path(r.log_files["agent-stdout"]).read_text().strip()
-    assert who != "root"
+    results = list(o.store.iter_trials())
+    assert len(results) == parallel
+    assert summary.by_status == {"passed": parallel}
+    for r in results:
+        assert r.status is TrialStatus.PASSED, (r.error, r.log_files)
+        assert r.metrics.quality.tests_passed.value == 2
+        assert r.metrics.quality.repair_iterations.value == repairs
+        assert r.metrics.code.files_changed.value == 2
+        assert r.agent.version == "scripted-1"
+        assert Path(r.log_files["agent-stdout"]).read_text().strip() != "root"
+        if repairs:
+            assert "repair-1-acceptance-junit" in r.log_files
+            assert r.metrics.performance.time_to_all_tests_pass_seconds.is_available
     leaked = [p for p in (tmp_path / "results").rglob("*") if p.is_file()
               and "do-not-leak" in p.read_text(errors="ignore")]  # fmt: skip
     assert not leaked
