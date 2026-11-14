@@ -31,6 +31,7 @@ import posixpath
 import shlex
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 from collections.abc import Mapping, Sequence
@@ -220,6 +221,8 @@ class DockerExecutionEnvironment(ExecutionEnvironment):
         self._has_timeout: dict[str, bool] = {}
         self._service_checks: dict[str, dict[str, list[str]]] = {}
         self._jobs = 0
+        self._image_lock = threading.Lock()
+        self._jobs_lock = threading.Lock()
 
     # -- helpers -----------------------------------------------------------
 
@@ -305,9 +308,10 @@ class DockerExecutionEnvironment(ExecutionEnvironment):
             text = dockerfile.read_text(encoding="utf-8")
             tag = f"ai-benchmark/stack-{stack.id}:{_short_hash(text, _hash_dir(context))}"
             built = False
-            if not self._image_exists(tag):
-                self._build(tag, text, context)
-                built = True
+            with self._image_lock:
+                if not self._image_exists(tag):
+                    self._build(tag, text, context)
+                    built = True
             return ImageInfo(
                 stack_id=stack.id, reference=tag, digest=self._image_id(tag), built_locally=built
             )
@@ -315,11 +319,12 @@ class DockerExecutionEnvironment(ExecutionEnvironment):
         assert stack.image is not None  # guaranteed by StackSpec validation
         ref = stack.image
         policy = self.settings.pull_policy
-        if policy == "always" or (policy == "if_not_present" and not self._image_exists(ref)):
-            log.info("pulling image %s", ref)
-            self.cli.run(["pull", "-q", ref])
-        elif policy == "never" and not self._image_exists(ref):
-            raise ExecutionEnvironmentError(f"image {ref} is not present and pull_policy=never")
+        with self._image_lock:
+            if policy == "always" or (policy == "if_not_present" and not self._image_exists(ref)):
+                log.info("pulling image %s", ref)
+                self.cli.run(["pull", "-q", ref])
+            elif policy == "never" and not self._image_exists(ref):
+                raise ExecutionEnvironmentError(f"image {ref} is not present and pull_policy=never")
         return ImageInfo(stack_id=stack.id, reference=ref, digest=self._image_id(ref))
 
     def prepare_agent_image(self, stack_image: ImageInfo, layer: AgentImageLayer) -> ImageInfo:
@@ -335,10 +340,11 @@ class DockerExecutionEnvironment(ExecutionEnvironment):
         key = _short_hash(text, stack_image.digest or "")
         tag = f"ai-benchmark/{stack_image.stack_id}-{layer.agent}:{key}"
         built = False
-        if not self._image_exists(tag):
-            with tempfile.TemporaryDirectory(prefix="ai-benchmark-ctx-") as ctx:
-                self._build(tag, text, Path(ctx))
-            built = True
+        with self._image_lock:
+            if not self._image_exists(tag):
+                with tempfile.TemporaryDirectory(prefix="ai-benchmark-ctx-") as ctx:
+                    self._build(tag, text, Path(ctx))
+                built = True
         return ImageInfo(
             stack_id=stack_image.stack_id,
             reference=tag,
@@ -351,9 +357,10 @@ class DockerExecutionEnvironment(ExecutionEnvironment):
         text = dockerfile.read_text(encoding="utf-8")
         tag = f"ai-benchmark/{name}:{_short_hash(text, _hash_dir(context))}"
         built = False
-        if not self._image_exists(tag):
-            self._build(tag, text, context)
-            built = True
+        with self._image_lock:
+            if not self._image_exists(tag):
+                self._build(tag, text, context)
+                built = True
         return ImageInfo(
             stack_id=name, reference=tag, digest=self._image_id(tag), built_locally=built
         )
@@ -586,8 +593,10 @@ class DockerExecutionEnvironment(ExecutionEnvironment):
         stderr_path: Path | None = None,
     ) -> CommandResult:
         assert handle.network_id
-        self._jobs += 1
-        name = self._name(handle.trial_id, f"job{self._jobs}")
+        with self._jobs_lock:
+            self._jobs += 1
+            job_number = self._jobs
+        name = self._name(handle.trial_id, f"job{job_number}")
         args = ["run", "--rm", "--name", name, "--network", handle.network_id]
         args += [*self._label_args(handle.trial_id), "--user", str(self.agent_uid)]
         args += ["--security-opt", "no-new-privileges"]

@@ -4,7 +4,7 @@ The orchestrator wires together the spec catalog, agent registry, execution
 environment, workspace manager and result store. It only depends on their
 interfaces and contains no agent- or stack-specific logic.
 
-Trials run sequentially in the planned (randomized) order. Each one gets a
+Trials start in the planned (randomized) order. Each one gets a
 fresh workspace and a fresh container; the timer covers only the agent run;
 acceptance tests run afterwards in a separate tester container.
 """
@@ -18,6 +18,7 @@ import shlex
 import subprocess
 import uuid
 from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -46,7 +47,7 @@ from ai_benchmark.errors import (
     PlanningError,
 )
 from ai_benchmark.models.enums import AuthMode, MetricSource, TrialStatus
-from ai_benchmark.models.metrics import Metric, QualityMetrics
+from ai_benchmark.models.metrics import Metric, QualityMetrics, TokenUsage, UsageMetrics
 from ai_benchmark.models.results import (
     AgentRecord,
     EnvironmentRecord,
@@ -89,7 +90,7 @@ def new_run_id() -> str:
 
 
 class BenchmarkOrchestrator:
-    """Runs experiments sequentially (parallel execution is a later phase)."""
+    """Runs isolated trials with a bounded concurrency limit."""
 
     def __init__(
         self,
@@ -197,31 +198,79 @@ class BenchmarkOrchestrator:
         self.store.save_manifest(manifest)
 
         summary = RunSummary(run_id=plan.run_id, total=len(plan.trials))
-        abort_reason: str | None = None
-        for trial in plan.trials:
-            if abort_reason is not None:
-                result = self._skeleton(plan, trial, task, stacks[trial.stack_id], config)
-                result.status = TrialStatus.CANCELLED
-                result.error = abort_reason
-            else:
-                log.info(
-                    "trial %d/%d %s (%s)",
-                    trial.execution_order + 1,
-                    len(plan.trials),
-                    trial.trial_id,
-                    trial.combination,
-                )
-                result = self.run_trial(plan, trial, task, stacks[trial.stack_id], config)
-                if result.status is TrialStatus.INFRA_ERROR and config.stop_on_infra_error:
-                    abort_reason = f"run aborted after infra error in {trial.trial_id}"
+
+        def record(result: TrialResult) -> None:
             self.store.save_trial(result)
-            summary.trial_ids.append(result.trial_id)
             summary.by_status[result.status.value] = (
                 summary.by_status.get(result.status.value, 0) + 1
             )
             if on_trial_complete is not None:
                 on_trial_complete(result)
+        if config.max_parallel == 1:
+            abort_reason: str | None = None
+            for trial in plan.trials:
+                if abort_reason is not None:
+                    result = self._skeleton(plan, trial, task, stacks[trial.stack_id], config)
+                    result.status = TrialStatus.CANCELLED
+                    result.error = abort_reason
+                else:
+                    result = self.run_trial(plan, trial, task, stacks[trial.stack_id], config)
+                    if result.status is TrialStatus.INFRA_ERROR and config.stop_on_infra_error:
+                        abort_reason = f"run aborted after infra error in {trial.trial_id}"
+                record(result)
+        else:
+            self._run_parallel(plan, task, stacks, config, record)
+        summary.trial_ids = [trial.trial_id for trial in plan.trials]
         return summary
+
+    def _run_parallel(
+        self,
+        plan: ExperimentPlan,
+        task: BenchmarkSpec,
+        stacks: dict[str, StackSpec],
+        config: ExperimentConfig,
+        record: TrialCallback,
+    ) -> None:
+        remaining = iter(plan.trials)
+        abort_reason: str | None = None
+        with ThreadPoolExecutor(max_workers=config.max_parallel) as pool:
+            active: dict[Future[TrialResult], PlannedTrial] = {}
+
+            def submit_next() -> bool:
+                trial = next(remaining, None)
+                if trial is None:
+                    return False
+                active[pool.submit(
+                    self.run_trial, plan, trial, task, stacks[trial.stack_id], config
+                )] = trial
+                return True
+
+            for _ in range(config.max_parallel):
+                if not submit_next():
+                    break
+            while active:
+                done, _ = wait(active, return_when=FIRST_COMPLETED)
+                for future in sorted(done, key=lambda item: active[item].execution_order):
+                    trial = active.pop(future)
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        log.exception("trial %s crashed outside run_trial", trial.trial_id)
+                        result = self._skeleton(plan, trial, task, stacks[trial.stack_id], config)
+                        result.status = TrialStatus.INFRA_ERROR
+                        result.error = f"{type(exc).__name__}: {exc}"
+                    record(result)
+                    if result.status is TrialStatus.INFRA_ERROR and config.stop_on_infra_error:
+                        abort_reason = f"run aborted after infra error in {trial.trial_id}"
+                if abort_reason is None:
+                    while len(active) < config.max_parallel and submit_next():
+                        pass
+        if abort_reason is not None:
+            for trial in remaining:
+                result = self._skeleton(plan, trial, task, stacks[trial.stack_id], config)
+                result.status = TrialStatus.CANCELLED
+                result.error = abort_reason
+                record(result)
 
     def build_manifest(
         self, plan: ExperimentPlan, config: ExperimentConfig, task: BenchmarkSpec
@@ -258,6 +307,8 @@ class BenchmarkOrchestrator:
             task_version=task.version,
             trial_index=trial.trial_index,
             execution_order=trial.execution_order,
+            max_repairs=config.max_repairs,
+            max_parallel=config.max_parallel,
             status=TrialStatus.PENDING,
             agent=AgentRecord(
                 name=trial.agent.agent,
@@ -336,31 +387,70 @@ class BenchmarkOrchestrator:
             snapshot_baseline(runner, stack.workdir)
             result.agent.version = adapter.get_version(runner)
 
-            agent_task = AgentTask(
-                trial_id=trial.trial_id,
-                prompt=self.render_prompt(task, stack),
-                workdir=stack.workdir,
-                log_dir=log_dir,
-                timeout_seconds=plan.timeouts.agent_seconds,
-                auth_mode=plan.auth_mode,
-                model=trial.agent.model,
-                reasoning_effort=trial.agent.reasoning_effort,
-                tooling=config.tooling,
-                options=trial.agent.options,
-            )
-            _phase(
-                trial.trial_id,
-                f"agent running (limit {format_duration(agent_task.timeout_seconds)}), "
-                f"output: {log_dir / 'agent.stdout.log'}",
-            )
-            with AgentHeartbeat(
-                trial.trial_id,
-                log_dir / "agent.stdout.log",
-                agent_task.timeout_seconds,
-                self.settings.progress_interval_seconds,
-            ):
-                agent_result = self.execute_agent(adapter, agent_task, runner)
-            self._record_agent(result, agent_result)
+            original_prompt = self.render_prompt(task, stack)
+            prompt = original_prompt
+            attempts: list[AgentRunResult] = []
+            agent_start = wall.mark("agent_start")
+            for attempt in range(config.max_repairs + 1):
+                attempt_dir = log_dir if attempt == 0 else log_dir / f"repair-{attempt}"
+                attempt_dir.mkdir(parents=True, exist_ok=True)
+                agent_task = AgentTask(
+                    trial_id=trial.trial_id,
+                    prompt=prompt,
+                    workdir=stack.workdir,
+                    log_dir=attempt_dir,
+                    timeout_seconds=plan.timeouts.agent_seconds,
+                    auth_mode=plan.auth_mode,
+                    model=trial.agent.model,
+                    reasoning_effort=trial.agent.reasoning_effort,
+                    tooling=config.tooling,
+                    options=trial.agent.options,
+                )
+                _phase(
+                    trial.trial_id,
+                    f"agent attempt {attempt + 1} running "
+                    f"(limit {format_duration(agent_task.timeout_seconds)}), "
+                    f"output: {attempt_dir / 'agent.stdout.log'}",
+                )
+                with AgentHeartbeat(
+                    trial.trial_id,
+                    attempt_dir / "agent.stdout.log",
+                    agent_task.timeout_seconds,
+                    self.settings.progress_interval_seconds,
+                ):
+                    agent_result = self.execute_agent(adapter, agent_task, runner)
+                attempts.append(agent_result)
+                self._record_agent(result, attempts)
+
+                _phase(trial.trial_id, f"running acceptance tests after attempt {attempt + 1}")
+                quality, test_logs, tester_ok, feedback = self.run_acceptance_tests(
+                    task, stack, handle, attempt_dir, plan
+                )
+                quality.repair_iterations = Metric[int].of(attempt, MetricSource.MEASURED)
+                result.metrics.quality = quality
+                prefix = "" if attempt == 0 else f"repair-{attempt}-"
+                result.log_files.update({f"{prefix}{k}": str(v) for k, v in test_logs.items()})
+                result.status = _final_status(agent_result, quality, tester_ok)
+                if result.status is TrialStatus.PASSED:
+                    if config.max_repairs:
+                        timer = result.metrics.performance
+                        timer.time_to_all_tests_pass_seconds = Metric[float].of(
+                            wall.elapsed - agent_start, MetricSource.MEASURED, unit="s"
+                        )
+                    break
+                if not tester_ok and result.status is TrialStatus.FAILED and not result.error:
+                    result.error = "acceptance tester did not finish cleanly (see acceptance logs)"
+                if (
+                    result.status is not TrialStatus.FAILED
+                    or not tester_ok
+                    or not quality.tests_failed.value
+                    or attempt == config.max_repairs
+                ):
+                    break
+                prompt = (
+                    f"{original_prompt}\n\nYour previous implementation failed the acceptance "
+                    f"tests. Repair the existing workspace. Test failures:\n{feedback}"
+                )
 
             change = snapshot_result(runner, stack.workdir)
             result.workspace_git_commit = change.commit
@@ -373,16 +463,6 @@ class BenchmarkOrchestrator:
             result.metrics.code.files_changed = Metric[int].of(
                 change.files_changed, MetricSource.MEASURED
             )
-
-            _phase(trial.trial_id, "running acceptance tests")
-            quality, test_logs, tester_ok = self.run_acceptance_tests(
-                task, stack, handle, log_dir, plan
-            )
-            result.metrics.quality = quality
-            result.log_files.update({k: str(v) for k, v in test_logs.items()})
-            result.status = _final_status(agent_result, quality, tester_ok)
-            if not tester_ok and result.status is TrialStatus.FAILED and not result.error:
-                result.error = "acceptance tester did not finish cleanly (see acceptance logs)"
         except (ExecutionEnvironmentError, ConfigurationError, AgentExecutionError) as exc:
             log.error("trial %s failed: %s", trial.trial_id, exc)
             result.status = TrialStatus.INFRA_ERROR
@@ -445,33 +525,39 @@ class BenchmarkOrchestrator:
         """Run the agent with the timer around nothing but the agent itself."""
         return adapter.run(task, runner)
 
-    def _record_agent(self, result: TrialResult, agent: AgentRunResult) -> None:
+    def _record_agent(self, result: TrialResult, attempts: list[AgentRunResult]) -> None:
+        agent = attempts[-1]
         perf = result.metrics.performance
-        seconds = agent.duration_seconds
+        seconds = sum(attempt.duration_seconds for attempt in attempts)
         perf.agent_execution_seconds = Metric[float].of(seconds, MetricSource.MEASURED, unit="s")
         perf.time_to_first_implementation_seconds = Metric[float].of(
-            seconds,
+            attempts[0].duration_seconds,
             MetricSource.DERIVED,
             unit="s",
-            note="no repair iterations: equals agent execution time",
+            note="first agent attempt",
         )
         perf.time_to_all_tests_pass_seconds = Metric[float].not_applicable(
-            "repair iterations are disabled"
+            "acceptance tests have not passed"
+            if result.max_repairs else "repair iterations are disabled"
         )
-        result.metrics.usage = agent.usage
+        result.metrics.usage = _combined_usage(attempts)
         result.agent.version = agent.agent_version or result.agent.version
         result.agent.reported_model = agent.reported_model
         result.agent.resolved_model = AgentRecord.resolve_model(
             result.agent.requested_model, agent.reported_model
         )
-        result.rate_limit_events = list(agent.rate_limit_events)
-        result.raw = dict(agent.raw)
-        for name, path in (
-            ("agent-stdout", agent.stdout_path),
-            ("agent-stderr", agent.stderr_path),
-        ):
-            if path is not None:
-                result.log_files[name] = str(path)
+        result.rate_limit_events = [event for item in attempts for event in item.rate_limit_events]
+        result.raw = dict(agent.raw) if len(attempts) == 1 else {
+            "attempts": [item.raw for item in attempts]
+        }
+        for index, item in enumerate(attempts):
+            prefix = "" if index == 0 else f"repair-{index}-"
+            for name, path in (
+                ("agent-stdout", item.stdout_path),
+                ("agent-stderr", item.stderr_path),
+            ):
+                if path is not None:
+                    result.log_files[f"{prefix}{name}"] = str(path)
         if agent.error:
             result.error = agent.error
         elif not agent.timed_out and not agent.succeeded:
@@ -484,7 +570,7 @@ class BenchmarkOrchestrator:
         handle: EnvironmentHandle,
         log_dir: Path,
         plan: ExperimentPlan,
-    ) -> tuple[QualityMetrics, dict[str, Path], bool]:
+    ) -> tuple[QualityMetrics, dict[str, Path], bool, str]:
         """Restart the container, start the app, and run the black-box suite against it.
 
         Returns the quality metrics, log files, and whether the tester finished cleanly.
@@ -492,7 +578,7 @@ class BenchmarkOrchestrator:
         spec = task.acceptance_tests
         quality = QualityMetrics()
         if spec.suite is None:
-            return quality, {}, False
+            return quality, {}, False, ""
         suite = spec.suite if spec.suite.is_absolute() else (task.source_dir or Path()) / spec.suite
         if not suite.is_dir():
             raise ConfigurationError(f"acceptance suite not found: {suite}")
@@ -545,7 +631,7 @@ class BenchmarkOrchestrator:
             quality.tests_passed = Metric[int].unavailable(note)
             quality.tests_failed = Metric[int].unavailable(note)
             quality.tests_total = Metric[int].unavailable(note)
-            return quality, files, False
+            return quality, files, False, ""
         files["acceptance-junit"] = junit
         summary = parse_junit(junit)
         quality.tests_total = Metric[int].of(summary.tests, MetricSource.MEASURED)
@@ -556,7 +642,44 @@ class BenchmarkOrchestrator:
         # A tester that timed out or crashed after writing a report did not finish the
         # suite. Failing tests are a normal ending (pytest exits 1 for them).
         finished = not res.timed_out and res.exit_code in spec.completed_exit_codes
-        return quality, files, finished
+        return quality, files, finished, "\n".join(summary.failure_details)[:4000]
+
+
+def _combined_usage(attempts: list[AgentRunResult]) -> UsageMetrics:
+    if len(attempts) == 1:
+        return attempts[0].usage
+    usages = [attempt.usage for attempt in attempts]
+    tokens = [usage.tokens for usage in usages]
+    return UsageMetrics(
+        tokens=TokenUsage(
+            accounting_scheme=tokens[0].accounting_scheme,
+            input_tokens=_sum_int([item.input_tokens for item in tokens]),
+            cached_input_tokens=_sum_int([item.cached_input_tokens for item in tokens]),
+            output_tokens=_sum_int([item.output_tokens for item in tokens]),
+            reasoning_tokens=_sum_int([item.reasoning_tokens for item in tokens]),
+            total_tokens=_sum_int([item.total_tokens for item in tokens]),
+        ),
+        cost=_sum_float([usage.cost for usage in usages]),
+        turns=_sum_int([usage.turns for usage in usages]),
+    )
+
+
+def _sum_int(metrics: list[Metric[int]]) -> Metric[int]:
+    if not all(metric.is_available for metric in metrics):
+        return Metric[int].unavailable("not reported for every agent attempt", unit=metrics[0].unit)
+    return Metric[int].of(sum(metric.value or 0 for metric in metrics), MetricSource.DERIVED,
+                          unit=metrics[0].unit, note="sum across agent attempts")
+
+
+def _sum_float(metrics: list[Metric[float]]) -> Metric[float]:
+    if not all(metric.is_available for metric in metrics):
+        return Metric[float].unavailable(
+            "not reported for every agent attempt", unit=metrics[0].unit
+        )
+    return Metric[float].of(
+        sum(metric.value or 0.0 for metric in metrics), MetricSource.DERIVED,
+        unit=metrics[0].unit, note="sum across agent attempts"
+    )
 
 
 def _final_status(

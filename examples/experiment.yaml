@@ -16,6 +16,8 @@ agents:
     #       target: /home/agent/.local/share/opencode/auth.json
 stacks: [fastapi, laravel, express]
 trials: 5
+# max_repairs: 1   # additional agent attempts after functional test failures
+# max_parallel: 2  # concurrent isolated trials; default 1
 tooling:
   mode: standard
 # subscription (default): cost recorded as unavailable, limit hits flagged.

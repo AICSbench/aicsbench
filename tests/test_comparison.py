@@ -45,6 +45,15 @@ def test_compare_rejects_mixed_task_versions() -> None:
         compare_trials([a, b], ComparisonDimension.STACK)
 
 
+@pytest.mark.parametrize("setting", ["max_repairs", "max_parallel"])
+def test_compare_rejects_mixed_execution_settings(setting: str) -> None:
+    a = trial("r1", "a", "codex", TrialStatus.PASSED)
+    b = trial("r1", "b", "codex", TrialStatus.PASSED)
+    setattr(b, setting, 2)
+    with pytest.raises(ValueError, match="repair budget|parallelism"):
+        compare_trials([a, b], ComparisonDimension.STACK)
+
+
 def test_compare_rejects_mixed_model_in_stack_view() -> None:
     a = trial("r1", "a", "codex", TrialStatus.PASSED)
     b = trial("r1", "b", "codex", TrialStatus.PASSED)

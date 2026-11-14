@@ -39,12 +39,17 @@ What `aicsbench run` does for each trial, in order. The code lives in
    inside the container; dependency and cache folders are excluded).
 3. The agent's version is captured, then the agent runs under the task's
    `agent_seconds` timeout.
-4. Whatever the agent left is committed. Lines added, lines deleted and files
+4. When `max_repairs` is positive and the acceptance suite finishes with
+   failing tests, the agent is run again in the same workspace with the failed
+   test names and messages. The original requirements are included again.
+   A tester crash, timeout, agent error or rate limit does not trigger repair.
+   Each attempt has its own agent timeout and log directory.
+5. After the final attempt, the workspace is committed. Lines added and files
    changed are measured against the baseline.
 
 ## 4. Acceptance tests
 
-The agent never sees the suite. After the agent finishes:
+The agent never sees the suite itself. After each agent attempt:
 
 1. The app container is restarted, so only what the agent wrote to disk counts.
 2. The task's `app_start_command` (default `sh start.sh`) is started in the
@@ -61,14 +66,19 @@ The agent never sees the suite. After the agent finishes:
 
 The tester image is the task's `acceptance_tests.image` if set, otherwise it
 is built from the `Dockerfile` in the suite folder.
+When repair is enabled, `time_to_all_tests_pass_seconds` includes the agent
+attempts and acceptance tests from the first agent start until the passing
+suite. Agent execution time is the sum of all attempts; token and cost metrics
+are summed only when every attempt reports them. All attempt logs are retained.
 
 ## 5. Status
 
 Checked in this order: `infra_error` (anything the platform itself failed
 at), `timed_out`, `rate_limited`, `agent_error`, `passed` (at least one test
 and all of them pass), otherwise `failed`. With `stop_on_infra_error`, the
-remaining trials are recorded as `cancelled`. Workspaces of `infra_error`
-trials are kept for debugging.
+trials not yet started are recorded as `cancelled`. Already running parallel
+trials finish and are recorded. Workspaces of `infra_error` trials are kept
+for debugging.
 
 ## Watching a run
 
@@ -80,6 +90,10 @@ Image builds report their current step the same way and stream their full output
 turn it off. The agent's full output is streamed to
 `.workspaces/<run>/<trial>/logs/agent.stdout.log`, so `tail -f` on it shows
 every event.
+
+With `max_parallel > 1`, trials start in the planned randomized order but may
+finish in a different order. Each has its own workspace, containers and network;
+image preparation is serialized to avoid concurrent builds of the same tag.
 
 ## Running the Docker integration test
 

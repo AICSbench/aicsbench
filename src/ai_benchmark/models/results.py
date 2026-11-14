@@ -91,6 +91,8 @@ class TrialResult(BaseModel):
     task_version: str
     trial_index: int = Field(ge=0)
     execution_order: int = Field(ge=0, description="Position in the randomized run order.")
+    max_repairs: int = Field(default=0, ge=0, description="Repair budget for this trial.")
+    max_parallel: int = Field(default=1, ge=1, description="Run concurrency for this trial.")
     status: TrialStatus = TrialStatus.PENDING
     agent: AgentRecord
     environment: EnvironmentRecord
@@ -130,13 +132,15 @@ class TrialResult(BaseModel):
         }
         return values[dimension]
 
-    def comparability_key(self) -> tuple[str, str, str, str]:
+    def comparability_key(self) -> tuple[str, str, str, str, int, int]:
         """Trials can only be compared when these match."""
         return (
             self.task_id,
             self.task_version,
             self.tooling.mode.value,
             self.agent.auth_mode.value,
+            self.max_repairs,
+            self.max_parallel,
         )
 
 

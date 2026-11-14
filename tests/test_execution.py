@@ -1,6 +1,7 @@
 """Orchestrator trial execution against an in-memory environment."""
 
 import shutil
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -9,20 +10,32 @@ import pytest
 from ai_benchmark.agents import AgentRegistry
 from ai_benchmark.config import AgentSelection, ExperimentConfig, SpecCatalog
 from ai_benchmark.config.settings import PlatformSettings
-from ai_benchmark.models import AuthMode, Metric, MetricSource, TrialStatus, UsageMetrics
+from ai_benchmark.models import (
+    AuthMode,
+    Metric,
+    MetricSource,
+    TokenUsage,
+    TrialStatus,
+    UsageMetrics,
+)
 from ai_benchmark.orchestrator import BenchmarkOrchestrator
 from ai_benchmark.orchestrator.policy import REPORTED_COST_KEY
 from ai_benchmark.storage import JsonResultStore, ResultFilter
 
 from .conftest import REPO_ROOT
-from .fakes import FAKE_TOKEN_ENV, JUNIT_ONE_FAIL, FakeAdapter, FakeEnvironment
+from .fakes import FAKE_TOKEN_ENV, JUNIT_ALL_PASS, JUNIT_ONE_FAIL, FakeAdapter, FakeEnvironment
 
 
 class CostlyAdapter(FakeAdapter):
     name = "costly"
 
     def parse_usage(self, raw: dict[str, Any]) -> tuple[UsageMetrics, Metric[str]]:
-        usage = UsageMetrics()
+        usage = UsageMetrics(tokens=TokenUsage(
+            accounting_scheme="fake",
+            input_tokens=Metric[int].of(10, MetricSource.AGENT_REPORTED),
+            output_tokens=Metric[int].of(5, MetricSource.AGENT_REPORTED),
+            total_tokens=Metric[int].of(15, MetricSource.AGENT_REPORTED),
+        ))
         usage.cost = Metric[float].of(0.42, MetricSource.AGENT_REPORTED, unit="USD")
         return usage, Metric[str].of("fake-model-2026", MetricSource.AGENT_REPORTED)
 
@@ -112,6 +125,66 @@ def test_failed_tests_mark_trial_failed(env_settings: PlatformSettings) -> None:
     assert summary.by_status == {"failed": 1}
     assert r.metrics.quality.tests_failed.value == 1
     assert r.error is None  # failing tests are a result, not a tester problem
+
+
+def test_failed_tests_trigger_repair_in_same_trial(env_settings: PlatformSettings) -> None:
+    class RepairEnvironment(FakeEnvironment):
+        def run_job(self, *args: Any, **kwargs: Any) -> Any:
+            if len([call for call in self.calls if call[0] == "run_job"]) == 0:
+                self.junit = JUNIT_ONE_FAIL
+                self.tester_exit = 1
+            else:
+                self.junit = JUNIT_ALL_PASS
+                self.tester_exit = 0
+            return super().run_job(*args, **kwargs)
+
+    env = RepairEnvironment()
+    o = build(env_settings, env)
+    o.run(experiment(max_repairs=1, agents=[AgentSelection(agent="costly", model="m1")]))
+    [result] = list(o.store.iter_trials())
+    assert result.status is TrialStatus.PASSED
+    assert result.max_repairs == 1
+    assert result.metrics.quality.repair_iterations.value == 1
+    assert result.metrics.performance.time_to_all_tests_pass_seconds.is_available
+    assert result.metrics.provider_specific[REPORTED_COST_KEY] == pytest.approx(0.84)
+    assert result.metrics.usage.tokens.input_tokens.value == 20
+    assert result.metrics.usage.tokens.total_tokens.value == 30
+    assert "repair-1-acceptance-junit" in result.log_files
+    prompts = [
+        call[1][-1] for call in env.calls
+        if call[0] == "exec" and call[1][:2] == ["fake", "--prompt"]
+    ]
+    assert len(prompts) == 2
+    assert "t::b" in prompts[1] and "boom" in prompts[1]
+
+
+def test_repair_does_not_retry_broken_tester(env_settings: PlatformSettings) -> None:
+    env = FakeEnvironment(junit=None)
+    o = build(env_settings, env)
+    o.run(experiment(max_repairs=2))
+    assert len([call for call in env.calls if call[0] == "run_job"]) == 1
+
+
+def test_parallel_trials_overlap_and_save_results(env_settings: PlatformSettings) -> None:
+    barrier = threading.Barrier(2, timeout=5)
+
+    class ParallelEnvironment(FakeEnvironment):
+        def run_job(self, *args: Any, **kwargs: Any) -> Any:
+            barrier.wait()
+            return super().run_job(*args, **kwargs)
+
+    o = build(env_settings, ParallelEnvironment())
+    summary = o.run(experiment(trials=2, max_parallel=2))
+    assert summary.by_status == {"passed": 2}
+    assert len(summary.trial_ids) == len(list(o.store.iter_trials())) == 2
+    assert all(r.max_parallel == 2 for r in o.store.iter_trials())
+
+
+def test_parallel_infra_abort_saves_pending_as_cancelled(env_settings: PlatformSettings) -> None:
+    o = build(env_settings, FakeEnvironment(fail_on="start"))
+    summary = o.run(experiment(trials=4, max_parallel=2, stop_on_infra_error=True))
+    assert summary.by_status == {"infra_error": 2, "cancelled": 2}
+    assert len(list(o.store.iter_trials())) == 4
 
 
 def test_interrupted_tester_is_reported(env_settings: PlatformSettings) -> None:

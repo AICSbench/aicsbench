@@ -94,7 +94,7 @@ def test_resolved_model_and_dimensions() -> None:
     assert t.dimension_value(ComparisonDimension.AGENT_MODEL) == "claude:m1"
     assert t.dimension_value(ComparisonDimension.STACK) == "fastapi"
     assert t.dimension_value(ComparisonDimension.LANGUAGE) == "python"
-    assert t.comparability_key() == ("task", "1", "standard", "subscription")
+    assert t.comparability_key() == ("task", "1", "standard", "subscription", 0, 1)
     assert all(t.dimension_value(d) for d in ComparisonDimension)
 
 

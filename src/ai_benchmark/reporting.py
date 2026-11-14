@@ -7,6 +7,7 @@ import io
 import json
 from dataclasses import asdict
 from html import escape
+from typing import Any
 
 from ai_benchmark.comparison import ComparisonRow
 from ai_benchmark.models.results import TrialResult
@@ -22,6 +23,8 @@ def trial_row(trial: TrialResult) -> dict[str, str | int | float | bool | None]:
         "run_id": trial.run_id,
         "trial_id": trial.trial_id,
         "trial_index": trial.trial_index,
+        "max_repairs": trial.max_repairs,
+        "max_parallel": trial.max_parallel,
         "task": trial.task_id,
         "task_version": trial.task_version,
         "agent": trial.agent.name,
@@ -40,6 +43,7 @@ def trial_row(trial: TrialResult) -> dict[str, str | int | float | bool | None]:
         "tests_passed": quality.tests_passed.value,
         "tests_failed": quality.tests_failed.value,
         "tests_total": quality.tests_total.value,
+        "repair_iterations": quality.repair_iterations.value,
         "token_scheme": tokens.accounting_scheme,
         "input_tokens": tokens.input_tokens.value,
         "cached_input_tokens": tokens.cached_input_tokens.value,
@@ -51,7 +55,7 @@ def trial_row(trial: TrialResult) -> dict[str, str | int | float | bool | None]:
     }
 
 
-def csv_text(rows: list[dict]) -> str:
+def csv_text(rows: list[dict[str, Any]]) -> str:
     if not rows:
         return ""
     stream = io.StringIO()

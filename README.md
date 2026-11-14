@@ -4,10 +4,11 @@ An open-source platform that measures and compares how productive AI coding
 agents (Codex CLI, Claude Code, OpenCode, and more) are across programming
 languages and frameworks.
 
-> **Status: Phase 2 (execution).** Trials run in Docker end to end with the
+> **Status: Phase 4 (execution and results).** Trials run in Docker with the
 > built-in Claude Code, Codex CLI and OpenCode adapters
-> ([docs/agents.md](docs/agents.md)). Reports and the dashboard come in later
-> phases. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full vision.
+> ([docs/agents.md](docs/agents.md)). Repair attempts, bounded parallel runs,
+> comparison reports and a local dashboard are available. See
+> [ARCHITECTURE.md](ARCHITECTURE.md) for the full vision.
 
 ## Install (development)
 
@@ -39,7 +40,20 @@ aicsbench compare --run RUN_ID --by stack [--agent codex --model gpt-6-luna]
 aicsbench export --run RUN_ID --format csv > trials.csv
 aicsbench export --run RUN_ID --format jsonl > trials.jsonl
 aicsbench report --run RUN_ID --by stack > report.md
+aicsbench dashboard --port 8765
 ```
+
+Use `--repairs N` to let a failed acceptance suite trigger up to N more agent
+attempts in the same workspace (default 0, maximum 5). Use `--parallel N` to
+run up to N isolated trials together (default 1, maximum 8). Each repair gets
+its own agent timeout and logs. Reports refuse to mix trials with different
+repair budgets or parallelism because their timings are not comparable.
+Subscription runs share usage limits, so parallelism can increase limit hits.
+
+The dashboard reads the JSON result store and uses the same comparison query
+as `aicsbench compare`. It binds only to `127.0.0.1`. On a server, forward its
+port from your Mac with `ssh -L 8765:127.0.0.1:8765 ubuntu@SERVER`, then open
+`http://127.0.0.1:8765` locally.
 
 The `fastapi-latest`, `express-latest`, and `laravel13-boost` stacks pin the
 newer runtime and framework versions used for the updated benchmark. The
@@ -74,6 +88,7 @@ src/ai_benchmark/
   agents/         AgentAdapter interface, registry, built-in claude/codex/opencode adapters
   environment/    ExecutionEnvironment interface, Docker implementation, per-trial workspaces
   orchestrator/   Planning (randomized, seeded), trial execution, git metrics, JUnit parsing
+  dashboard.py     Loopback-only comparison dashboard
   storage/        ResultStore interface + atomic JSON file store
 benchmarks/
   tasks/<id>/task.yaml   Benchmark task definitions
