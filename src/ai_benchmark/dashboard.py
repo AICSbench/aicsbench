@@ -63,6 +63,8 @@ const el = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
 const message = document.getElementById('message');
 const rows = document.getElementById('rows');
 let trials = [];
+let trialGeneration = 0;
+let compareGeneration = 0;
 async function api(path) {
   const response = await fetch(path);
   const data = await response.json();
@@ -81,9 +83,24 @@ function fillFilter(id) {
   if (values.includes(previous)) select.value = previous;
 }
 async function loadTrials() {
-  trials = el.run.value ? await api('/api/trials?run=' + encodeURIComponent(el.run.value)) : [];
-  ['agent', 'model', 'stack', 'task'].forEach(fillFilter);
-  alignFilters();
+  const current = ++trialGeneration;
+  compareGeneration++;  // invalidate comparisons still in flight for the old run
+  rows.replaceChildren(); message.textContent = ''; message.className = '';
+  try {
+    const loaded = el.run.value
+      ? await api('/api/trials?run=' + encodeURIComponent(el.run.value))
+      : [];
+    if (current !== trialGeneration) return;  // a newer run selection took over
+    trials = loaded;
+    ['agent', 'model', 'stack', 'task'].forEach(fillFilter);
+    alignFilters();
+  } catch (error) {
+    if (current !== trialGeneration) return;
+    trials = [];  // never show the previous run's rows under a new selection
+    ['agent', 'model', 'stack', 'task'].forEach(fillFilter);
+    message.textContent = error.message; message.className = 'error';
+    return;
+  }
   await update();
 }
 function alignFilters() {
@@ -107,6 +124,7 @@ function cell(row, value) {
   const td = document.createElement('td'); td.textContent = value; row.append(td); return td;
 }
 async function update() {
+  const current = ++compareGeneration;
   rows.replaceChildren(); message.textContent = ''; message.className = '';
   if (!el.run.value) { message.textContent = 'No runs found.'; return; }
   const query = new URLSearchParams({run: el.run.value, by: el.by.value});
@@ -115,6 +133,7 @@ async function update() {
   }
   try {
     const data = await api('/api/compare?' + query);
+    if (current !== compareGeneration) return;  // a newer selection took over
     if (!data.groups.length) { message.textContent = 'No matching trials.'; return; }
     for (const group of data.groups) {
       const tr = document.createElement('tr');
@@ -133,7 +152,10 @@ async function update() {
     }
     message.textContent = data.groups.length + ' group(s); ' +
       'mean time uses passing trials without rate-limit events.';
-  } catch (error) { message.textContent = error.message; message.className = 'error'; }
+  } catch (error) {
+    if (current !== compareGeneration) return;
+    message.textContent = error.message; message.className = 'error';
+  }
 }
 async function init() {
   try {
@@ -142,7 +164,11 @@ async function init() {
     await loadTrials();
   } catch (error) { message.textContent = error.message; message.className = 'error'; }
 }
-el.run.addEventListener('change', loadTrials);
+el.run.addEventListener('change', () => {
+  loadTrials().catch(error => {
+    message.textContent = error.message; message.className = 'error';
+  });
+});
 el.by.addEventListener('change', () => {
   ['agent', 'model', 'stack'].forEach(id => { el[id].value = ''; });
   alignFilters(); update();
