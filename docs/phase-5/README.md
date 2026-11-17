@@ -57,8 +57,9 @@ on are merged into `main`.
 | 5 | [Compare page in the browser](tasks/05-compare-page.md) | 4 | this repo |
 | 6 | [Data repository template and workflows](tasks/06-data-repo.md) | 2, 4 | this repo, then the data repo |
 | 7 | [Installed language and framework versions](tasks/07-installed-versions.md) | none | this repo |
+| 8 | [Framework version per run, pinned stacks](tasks/08-stack-versions.md) | 7 | this repo |
 
-Tasks 2 and 4 can run in parallel once task 1 is merged. Task 7 is independent and can run at any time; do it before real submissions start so public runs carry installed versions.
+Tasks 2 and 4 can run in parallel once task 1 is merged. Tasks 7 and 8 are independent of the others (8 needs 7); do them before real submissions start so public runs carry exact, pinned versions.
 
 ## How to work on a task
 
@@ -109,3 +110,4 @@ Tasks 2 and 4 can run in parallel once task 1 is merged. Task 7 is independent a
 | 5 Compare page | not started |
 | 6 Data repository | not started |
 | 7 Installed versions | not started |
+| 8 Stack versions | not started |
