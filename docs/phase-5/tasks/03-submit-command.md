@@ -14,7 +14,7 @@ the data repository would reject or that leaks local details.
 aicsbench submit --run RUN_ID
                  [--name NAME] [--github HANDLE] [--notes TEXT]
                  [--with-logs] [--out DIR] [--dry-run]
-                 [--data-repo dyaskur/aicsbench-data]
+                 [--data-repo aicsbench/data]
 ```
 
 1. Load the run from the result store. Refuse if any trial is still

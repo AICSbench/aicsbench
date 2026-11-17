@@ -42,7 +42,7 @@ nothing calls it a harness. See [decisions.md](../decisions.md) D8 and the
      filter to one of each"`.
 5. `src/ai_benchmark/reporting.py`, `trial_row`: add `harness`,
    `harness_version`, `requested_model`, `reasoning_effort` (see
-   [schemas.md](../schemas.md#site-data-file)). Existing keys keep their
+   [schemas.md](../schemas.md#datatrialsjson)). Existing keys keep their
    names, order and meaning; new keys go at the end.
 6. `src/ai_benchmark/storage/base.py`, `ResultFilter`: add
    `harness_version: str | None = None`, applied in `JsonResultStore`.

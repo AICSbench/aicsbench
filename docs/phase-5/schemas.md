@@ -93,7 +93,7 @@ Two modes:
 - **Admission** (`check_catalog=True`, the default): used by `submit` and by
   the data repository's CI for new bundles. A new bundle must match a task
   version the current catalog ships.
-- **Rebuild** (`check_catalog=False`): used by the site build for bundles
+- **Rebuild** (`check_catalog=False`): used by `aicsbench site export` for bundles
   already merged. The `task` rule and the catalog part of the `suite` rule
   are skipped, so results for a task version the catalog no longer ships
   stay on the site, shown under their own version. The `suite` manifest
@@ -113,23 +113,45 @@ Two modes:
 | `secret` | The secret scan above finds nothing in any JSON file or log archive member. |
 | `duplicate` | (only with `--against DIR`) no bundle under `DIR`, other than the one being validated (compared by resolved path), has the same `run_id` or the same SHA-256 of `manifest.json`. CI passes a checkout of the base branch as `DIR`, so the new bundle is never compared with itself. |
 
-## Site data file
+## Site export
 
-`aicsbench site build` writes `data/trials.json`: a JSON array with one
-object per trial of every accepted submission. Each object is
-`reporting.trial_row(trial)` (the existing export row) plus these keys, all
-added by tasks 1 and 7 to `trial_row` itself so CSV/JSONL exports get them too:
+`aicsbench site export --data DIR --out DIR --base-url URL` (task 4, this
+repository) reads a checkout of `aicsbench/data` and writes everything the
+website needs. `aicsbench/web` renders it and computes nothing. The export
+is committed to the data repository's `export` branch on every merge.
+
+```
+<out>/
+  export.json          # {"export_schema": 1, "built_at", "platform_version",
+                       #  "platform_git_commit", "data_commit", "base_url"}
+  data/trials.json     # one row per trial, see below
+  data/meta.json       # {"runs", "trials", "tasks": [{"id", "version", "name", "description"}]}
+  pages.json           # every static page, see below
+  runs/<run_id>/submission.json
+  runs/<run_id>/manifest.json
+```
+
+`export_schema` starts at 1. A change that removes or renames a key bumps
+it. `aicsbench/web` refuses an export whose `export_schema` it does not
+support and fails the build with a message naming both numbers. Adding a key
+does not bump it.
+
+### `data/trials.json`
+
+A JSON array with one object per trial of every accepted submission. Each
+object is `reporting.trial_row(trial)` (the existing export row) plus these
+keys, all added to `trial_row` itself so CSV/JSONL exports get them too:
 
 | Key | Source |
 | --- | --- |
-| `harness` | `agent.name` (same value as the existing `agent` key, kept for compatibility) |
-| `harness_version` | `agent.version` |
-| `requested_model` | `agent.requested_model` |
-| `reasoning_effort` | `agent.reasoning_effort` |
+| `harness` | `agent.name` (same value as the existing `agent` key, kept for compatibility); task 1 |
+| `harness_version` | `agent.version`; task 1 |
+| `requested_model` | `agent.requested_model`; task 1 |
+| `reasoning_effort` | `agent.reasoning_effort`; task 1 |
 | `language_version_installed` | `environment.installed_versions["language"]` (task 7; the existing `language_version` key stays the version the stack declares) |
 | `framework_version_installed` | `environment.installed_versions["framework"]` (task 7; the existing `framework_version` key stays the version the stack declares) |
 
-and these keys added only in the site file:
+and these keys added only in the export:
 
 | Key | Source |
 | --- | --- |
@@ -138,12 +160,44 @@ and these keys added only in the site file:
 | `submitted_at` | `submission.json.submitted_at` |
 | `submitter` | `submission.json.submitter.github` or `name` |
 
-`data/meta.json` holds `{"built_at", "platform_version", "runs", "trials",
-"tasks": [{"id", "version"}]}`.
+### `pages.json`
+
+```json
+{"pages": [
+  {"path": "/tasks/url-shortener-api/",
+   "kind": "task",
+   "title": "...", "description": "...",
+   "params": {"task": "url-shortener-api"},
+   "sections": [
+     {"heading": "...",
+      "fixed": {"task_version": "1.0.0", "stack": "fastapi-latest"},
+      "by": "harness_model",
+      "verified_only": true,
+      "rows": [ComparisonRow, ...],
+      "refused": null}
+   ],
+   "links": [{"path": "...", "label": "..."}]}
+]}
+```
+
+- `kind` is one of `home`, `task`, `harness`, `model`, `stack`, `run`,
+  `compare`, `methodology`. One template per kind in `aicsbench/web`.
+- `rows` are `dataclasses.asdict(comparison.ComparisonRow)` plus
+  `success_rate` (`passed / trials`), in the order `compare_trials` returns
+  them. A `null` mean (no timed or costed trials) renders as "unavailable",
+  never `0`.
+- `refused` is the `compare_trials` error message when a section cannot be
+  compared. It is shown instead of a table. Normally the "per ..." splits
+  below prevent it.
+- `title` and `description` are plain text. All escaping is the renderer's
+  job.
+- Every page with community runs has a second section for them with
+  `verified_only: false`, labelled as community results.
 
 ## Site layout
 
-All pages are rendered at build time and readable without JavaScript.
+The export lists these pages (`pages.json`), and `aicsbench/web` renders
+each one at build time, readable without JavaScript.
 Every path ends in `/` and is written as `<path>/index.html`.
 
 | Path | Content |
@@ -154,7 +208,7 @@ Every path ends in `/` and is written as `<path>/index.html`.
 | `/tasks/<task>/models/<model>/` | That model: by harness (per stack), by stack (per harness) |
 | `/tasks/<task>/stacks/<stack>/` | That stack: by harness + model |
 | `/runs/<run_id>/` | Run metadata, every trial row, link to the raw bundle on GitHub |
-| `/compare/` | The interactive compare page (task 5); static fallback text explains it needs JavaScript |
+| `/compare/` | The interactive compare page (task 5, in `aicsbench/web`); static fallback text explains it needs JavaScript |
 | `/methodology/` | How trials run, what each metric means, comparability rules, verified vs community |
 | `/sitemap.xml`, `/robots.txt` | All pages above; `robots.txt` allows all and points at the sitemap |
 
@@ -166,15 +220,15 @@ in `-` plus 8 hex characters, it is the slug. Otherwise the slug is the base
 slug plus `-<first 8 hex characters of SHA-256 of the original value>`, so
 `Foo/Bar` and `Foo-Bar` get distinct paths, and a value that already looks
 like a suffixed slug (`foo-bar-c84b3c5b`) is suffixed again instead of taking
-another value's path. The build fails if two pages would share an output
+another value's path. The export fails if two pages would share an output
 path, naming both values. The 8-character hash can still collide for crafted
 values; such a collision can only come from a new submission, and the data
-repository's `validate` check builds the site, so that PR fails and cannot be
+repository's `validate` check runs the export, so that PR fails and cannot be
 merged. Pages already published never change path.
-Every page has a unique `<title>`, a `<meta name="description">`, a
-canonical URL from `--base-url`, Open Graph tags, and JSON-LD
-(`Dataset` on task pages, `WebSite` on `/`). Charts are inline SVG generated
-in Python, never images or JavaScript-only.
+Every rendered page has a unique `<title>`, a `<meta name="description">`, a
+canonical URL from the export's `base_url`, Open Graph tags, and JSON-LD
+(`Dataset` on task pages, `WebSite` on `/`). Charts are inline SVG drawn by
+the renderer from `rows`, never images or JavaScript-only.
 
 Leaderboard rows use `comparison.compare_trials`, which refuses a
 comparison that leaves another dimension mixed (for example comparing stacks

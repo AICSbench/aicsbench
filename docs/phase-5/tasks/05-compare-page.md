@@ -1,7 +1,7 @@
 # Task 5: compare page in the browser
 
-**Branch:** `feat/phase5-compare-page` · **Depends on:** task 4 ·
-**Commit scope:** `site`
+**Repository:** `aicsbench/web` · **Branch:** `feat/compare-page` ·
+**Depends on:** task 10 · **Commit scope:** `site`
 
 ## Why
 
@@ -11,8 +11,8 @@ need filtering and grouping on demand, without a server.
 
 ## Changes
 
-1. `/compare/index.html` (template from task 4) plus
-   `src/ai_benchmark/site/static/compare.js`, a plain ES module.
+1. The `compare` page template (from task 10) plus
+   `src/aicsbench_web/static/compare.js`, a plain ES module.
 2. Load DuckDB-WASM from `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@<exact version>/`
    (pin an exact version at least two weeks old), register
    `data/trials.json`, and create a view `trials`.
@@ -42,12 +42,15 @@ need filtering and grouping on demand, without a server.
 
 ## Acceptance criteria
 
-- [ ] A Python test runs the same comparison through `compare_trials` and
-      through the SQL string the page uses (executed with the `duckdb`
-      Python package installed only in the test extra) on the fixture data,
-      and asserts identical numbers.
+- [ ] A contract test (in `ci.yml`'s contract job, which installs
+      `aicsbench` at the pinned ref) runs the same comparison through
+      `aicsbench`'s `compare_trials` and through the SQL string the page uses
+      (executed with the `duckdb` Python package, a test-only dependency) on
+      the fixture data, and asserts identical numbers. This is the only
+      place the web repository repeats comparison logic, and this test is
+      what keeps the two in step.
 - [ ] A Playwright test (marked, skipped when Playwright is unavailable)
-      loads the built site from a local HTTP server, picks
+      loads the rendered fixture site from a local HTTP server, picks
       "Compare by: harness", and sees one row per harness in the fixture.
 - [ ] Opening a URL with query parameters restores the same selection.
 - [ ] Refusals show the CLI's message, not numbers: the Playwright test

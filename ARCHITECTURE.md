@@ -504,9 +504,11 @@ Phase 4:
 
 Phase 5:
 
-* Public results: submissions as pull requests to a data repository, a
-  static, search-engine-friendly site and in-browser comparisons by harness,
-  model and stack. Plan and implementation tasks: docs/phase-5/README.md.
+* Public results: submissions as pull requests to `aicsbench/data`, an
+  export computed here (`aicsbench site export`), and a static,
+  search-engine-friendly site with in-browser comparisons by harness, model
+  and stack, rendered by `aicsbench/web`. Plan and implementation tasks:
+  docs/phase-5/README.md.
 
 Start by inspecting the environment and proposing the architecture and implementation plan. Then implement the project incrementally.
 
