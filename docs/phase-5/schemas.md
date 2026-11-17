@@ -159,11 +159,12 @@ Every path ends in `/` and is written as `<path>/index.html`.
 Slugs depend only on the value, never on which other values exist, so a
 page path never changes when new data arrives. The base slug is the value in
 lower case with characters outside `[a-z0-9._-]` replaced by `-`. If the base
-slug equals the original value (for example `gpt-6-luna`), it is the slug.
-Otherwise the slug is the base slug plus
-`-<first 8 hex characters of SHA-256 of the original value>`, so `Foo/Bar`
-and `Foo-Bar` get distinct paths. The build asserts no two pages share an
-output path.
+slug equals the original value (for example `gpt-6-luna`) and does not end
+in `-` plus 8 hex characters, it is the slug. Otherwise the slug is the base
+slug plus `-<first 8 hex characters of SHA-256 of the original value>`, so
+`Foo/Bar` and `Foo-Bar` get distinct paths, and a value that already looks
+like a suffixed slug (`foo-bar-c84b3c5b`) is suffixed again instead of taking
+another value's path. The build asserts no two pages share an output path.
 Every page has a unique `<title>`, a `<meta name="description">`, a
 canonical URL from `--base-url`, Open Graph tags, and JSON-LD
 (`Dataset` on task pages, `WebSite` on `/`). Charts are inline SVG generated

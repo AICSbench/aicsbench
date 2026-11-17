@@ -83,7 +83,8 @@ aicsbench [--tasks-dir DIR] site build --data DIR --out DIR --base-url URL
       JSON-LD block contains no raw `</script>`.
 - [ ] Two models whose base slugs collide (`Foo/Bar`, `Foo-Bar`) get
       distinct page paths, and adding the second does not change the
-      first's path.
+      first's path. `Foo/Bar` and the literal value `foo-bar-c84b3c5b` (its
+      suffixed slug) also get distinct paths.
 - [ ] A bundle for a task version the catalog no longer ships still appears,
       under its own version.
 
