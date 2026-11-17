@@ -55,7 +55,11 @@ from ai_benchmark.models.results import (
     ToolingRecord,
     TrialResult,
 )
-from ai_benchmark.orchestrator.code_metrics import snapshot_baseline, snapshot_result
+from ai_benchmark.orchestrator.code_metrics import (
+    discard_untracked,
+    snapshot_baseline,
+    snapshot_result,
+)
 from ai_benchmark.orchestrator.junit import parse_junit
 from ai_benchmark.orchestrator.plan import ExperimentPlan, PlannedTrial, build_plan
 from ai_benchmark.orchestrator.policy import apply_auth_policy
@@ -394,6 +398,10 @@ class BenchmarkOrchestrator:
             for attempt in range(config.max_repairs + 1):
                 attempt_dir = log_dir if attempt == 0 else log_dir / f"repair-{attempt}"
                 attempt_dir.mkdir(parents=True, exist_ok=True)
+                if attempt > 0:
+                    # The previous attempt's work is committed; drop only what its
+                    # acceptance run left behind before the agent repairs it.
+                    discard_untracked(runner, stack.workdir)
                 agent_task = AgentTask(
                     trial_id=trial.trial_id,
                     prompt=prompt,

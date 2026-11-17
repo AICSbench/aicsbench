@@ -195,6 +195,43 @@ def test_implementation_is_snapshotted_before_acceptance_tests(
         assert commit < suites[attempt * 2]
 
 
+def test_acceptance_artifacts_are_discarded_between_repairs(
+    env_settings: PlatformSettings,
+) -> None:
+    class RepairEnvironment(FakeEnvironment):
+        def run_job(self, *args: Any, **kwargs: Any) -> Any:
+            if len([call for call in self.calls if call[0] == "run_job"]) == 0:
+                self.junit = JUNIT_ONE_FAIL
+                self.tester_exit = 1
+            else:
+                self.junit = JUNIT_ALL_PASS
+                self.tester_exit = 0
+            return super().run_job(*args, **kwargs)
+
+    def index_of(pattern: str, env: FakeEnvironment) -> list[int]:
+        return [
+            i
+            for i, (step, argv) in enumerate(env.calls)
+            if step == "exec" and any(pattern in a for a in argv)
+        ]
+
+    env = RepairEnvironment()
+    o = build(env_settings, env)
+    o.run(experiment(max_repairs=1, agents=[AgentSelection(agent="costly", model="m1")]))
+    [r] = list(o.store.iter_trials())
+    assert r.status is TrialStatus.PASSED and r.metrics.quality.repair_iterations.value == 1
+    cleans = index_of("git clean -fdq", env)
+    suites = [i for i, (step, _) in enumerate(env.calls) if step in {"restart", "run_job"}]
+    assert len(cleans) == 1  # only before a repair attempt, never around the first
+    assert suites[1] < cleans[0] < suites[2]
+
+    # a trial that passes first time must not clean at all
+    clean_env = FakeEnvironment()
+    o2 = build(env_settings, clean_env)
+    o2.run(experiment(max_repairs=2), run_id="r-no-clean")
+    assert not index_of("git clean -fdq", clean_env)
+
+
 def test_parallel_trials_overlap_and_save_results(env_settings: PlatformSettings) -> None:
     barrier = threading.Barrier(2, timeout=5)
 

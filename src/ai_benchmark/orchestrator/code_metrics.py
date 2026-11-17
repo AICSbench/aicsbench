@@ -58,6 +58,17 @@ def snapshot_baseline(runner: CommandRunner, workdir: str) -> str:
     return _sh(runner, script, workdir).strip()
 
 
+def discard_untracked(runner: CommandRunner, workdir: str) -> None:
+    """Remove untracked, non-ignored files left in the workspace.
+
+    Used between repair attempts: everything the agent wrote is already
+    committed by the previous snapshot, and ignored paths (dependencies,
+    ``*.log``) are kept, so only artefacts of the failed acceptance run
+    disappear before the next attempt starts.
+    """
+    _sh(runner, "git clean -fdq", workdir)
+
+
 def snapshot_result(runner: CommandRunner, workdir: str) -> CodeChange:
     """Commit whatever the agent left and measure it against the baseline."""
     git = " ".join(_GIT)
