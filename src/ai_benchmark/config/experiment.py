@@ -80,7 +80,10 @@ class ExperimentConfig(StrictModel):
     randomize_order: bool = True
     seed: int | None = Field(default=None, description="None = a random seed, recorded in results.")
     max_parallel: int = Field(
-        default=1, ge=1, le=1, description="Only sequential execution is supported for now."
+        default=1, ge=1, le=8, description="Maximum trials running at once."
+    )
+    max_repairs: int = Field(
+        default=0, ge=0, le=5, description="Extra agent attempts after failed acceptance tests."
     )
     stop_on_infra_error: bool = Field(
         default=False, description="Abort the run when the platform itself fails."

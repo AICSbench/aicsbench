@@ -105,14 +105,15 @@ def test_agent_selection_parse() -> None:
     assert AgentSelection.parse("codex").model is None
 
 
-def test_experiment_rejects_duplicates_and_parallelism() -> None:
+def test_experiment_rejects_duplicates_and_excess_parallelism() -> None:
     base = dict(task="t", agents=[AgentSelection(agent="a")], stacks=["s"])
     with pytest.raises(ValidationError):
         ExperimentConfig(**{**base, "stacks": ["s", "s"]})
     with pytest.raises(ValidationError):
         ExperimentConfig(**{**base, "agents": [AgentSelection(agent="a")] * 2})
+    assert ExperimentConfig(**base, max_parallel=2).max_parallel == 2
     with pytest.raises(ValidationError):
-        ExperimentConfig(**base, max_parallel=2)
+        ExperimentConfig(**base, max_parallel=9)
 
 
 def test_mcp_only_in_best_ecosystem_mode() -> None:

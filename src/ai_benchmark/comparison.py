@@ -30,7 +30,11 @@ def compare_trials(
         raise ValueError("min_trials must be at least 1")
     keys = {trial.comparability_key() for trial in trials}
     if len(keys) > 1:
-        raise ValueError("results mix task/version, tooling mode, or auth mode; filter to one set")
+        raise ValueError(
+            "results mix task/version, tooling mode, auth mode, repair budget, or "
+            "parallelism; "
+            "filter to one set"
+        )
     stack_axes = {
         ComparisonDimension.STACK, ComparisonDimension.LANGUAGE, ComparisonDimension.FRAMEWORK
     }
@@ -57,6 +61,7 @@ def compare_trials(
             if trial.status is TrialStatus.PASSED
             and not trial.rate_limited
             and trial.metrics.performance.agent_execution_seconds.is_available
+            and trial.metrics.performance.agent_execution_seconds.value is not None
         ]
         costs = [
             trial.metrics.usage.cost.value
@@ -64,6 +69,7 @@ def compare_trials(
             if trial.status is TrialStatus.PASSED
             and not trial.rate_limited
             and trial.metrics.usage.cost.is_available
+            and trial.metrics.usage.cost.value is not None
         ]
         rows.append(
             ComparisonRow(

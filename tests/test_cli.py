@@ -85,3 +85,21 @@ def test_run_dry_run_auth_mode() -> None:
     assert "auth subscription" in invoke(*args, "--dry-run").output
     result = invoke(*args, "--auth", "api_key", "--dry-run")
     assert result.exit_code == 0 and "auth api_key" in result.output
+
+
+def test_run_dry_run_repair_budget() -> None:
+    result = invoke(
+        "run", "--agents", "codex", "--task", "task-management-api",
+        "--stacks", "fastapi", "--repairs", "2", "--dry-run",
+    )
+    assert result.exit_code == 0
+    assert "repairs 2" in result.output
+
+
+def test_run_dry_run_parallelism() -> None:
+    result = invoke(
+        "run", "--agents", "codex", "--task", "task-management-api",
+        "--stacks", "fastapi", "--parallel", "2", "--dry-run",
+    )
+    assert result.exit_code == 0
+    assert "parallel 2" in result.output

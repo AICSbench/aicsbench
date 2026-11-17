@@ -16,6 +16,7 @@ class JUnitSummary(BaseModel):
     errors: int
     skipped: int
     failed_cases: list[str]
+    failure_details: list[str]
 
     @property
     def passed(self) -> int:
@@ -31,17 +32,25 @@ def parse_junit(path: Path) -> JUnitSummary:
     root = ET.parse(path).getroot()
     tests = failures = errors = skipped = 0
     failed_cases: list[str] = []
+    failure_details: list[str] = []
     for case in root.iter("testcase"):
         tests += 1
         name = f"{case.get('classname', '')}::{case.get('name', '')}".strip(":")
-        if case.find("failure") is not None:
+        failure = case.find("failure")
+        error = case.find("error")
+        if failure is not None:
             failures += 1
             failed_cases.append(name)
-        elif case.find("error") is not None:
+            detail = (failure.get("message") or failure.text or "").strip()
+            failure_details.append(f"{name}: {detail}")
+        elif error is not None:
             errors += 1
             failed_cases.append(name)
+            detail = (error.get("message") or error.text or "").strip()
+            failure_details.append(f"{name}: {detail}")
         elif case.find("skipped") is not None:
             skipped += 1
     return JUnitSummary(
-        tests=tests, failures=failures, errors=errors, skipped=skipped, failed_cases=failed_cases
+        tests=tests, failures=failures, errors=errors, skipped=skipped,
+        failed_cases=failed_cases, failure_details=failure_details,
     )

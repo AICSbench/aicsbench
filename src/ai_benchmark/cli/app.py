@@ -24,6 +24,7 @@ from ai_benchmark.config.loader import (
     read_document,
 )
 from ai_benchmark.config.settings import PlatformSettings
+from ai_benchmark.dashboard import serve_dashboard
 from ai_benchmark.environment.docker import DockerExecutionEnvironment
 from ai_benchmark.errors import BenchmarkError, ConfigurationError
 from ai_benchmark.logging_config import configure_logging
@@ -248,6 +249,8 @@ def run(
         Optional[str], typer.Option("--stacks", help="Comma-separated stack ids.")
     ] = None,
     trials: Annotated[Optional[int], typer.Option("--trials", min=1)] = None,
+    repairs: Annotated[Optional[int], typer.Option("--repairs", min=0, max=5)] = None,
+    parallel: Annotated[Optional[int], typer.Option("--parallel", min=1, max=8)] = None,
     mode: Annotated[
         Optional[ToolingMode], typer.Option("--mode", help="Tooling mode (default: standard).")
     ] = None,
@@ -276,6 +279,10 @@ def run(
                 updates["stacks"] = _split(stacks_opt)
             if trials:
                 updates["trials"] = trials
+            if repairs is not None:
+                updates["max_repairs"] = repairs
+            if parallel is not None:
+                updates["max_parallel"] = parallel
             if seed is not None:
                 updates["seed"] = seed
             if no_shuffle:
@@ -293,6 +300,8 @@ def run(
                 agents=[AgentSelection.parse(a) for a in _split(agents_opt)],
                 stacks=_split(stacks_opt),
                 trials=trials,
+                max_repairs=repairs or 0,
+                max_parallel=parallel or 1,
                 tooling=ToolingConfig(mode=mode or ToolingMode.STANDARD),
                 auth_mode=auth or AuthMode.SUBSCRIPTION,
                 seed=seed,
@@ -312,7 +321,8 @@ def run(
     console.print(
         f"Run [bold]{plan.run_id}[/bold]: task [bold]{plan.task_id}[/bold], "
         f"{len(plan.trials)} trial(s), {plan.trials_per_combination} per combination, "
-        f"tooling mode {exp.tooling.mode.value}, auth {plan.auth_mode.value}, seed {plan.seed}"
+        f"tooling mode {exp.tooling.mode.value}, auth {plan.auth_mode.value}, "
+        f"repairs {exp.max_repairs}, parallel {exp.max_parallel}, seed {plan.seed}"
     )
     table = Table("#", "trial id", "agent", "model", "stack", "repetition")
     for t in plan.trials:
@@ -518,6 +528,20 @@ def report(
             raise ValueError("no results match")
         typer.echo(render_report(rows, by.value, fmt), nl=False)
     except (BenchmarkError, ValueError) as exc:
+        raise _fail(str(exc)) from None
+
+
+@app.command()
+def dashboard(
+    ctx: typer.Context,
+    port: Annotated[int, typer.Option("--port", min=1, max=65535)] = 8765,
+) -> None:
+    """Serve a local results dashboard (use an SSH tunnel on a remote host)."""
+    try:
+        serve_dashboard(_ctx(ctx).settings.results_dir, port)
+    except KeyboardInterrupt:
+        pass
+    except OSError as exc:
         raise _fail(str(exc)) from None
 
 
