@@ -1,0 +1,55 @@
+id: url-shortener-api
+name: URL Shortener API
+version: "1"
+description: Build a persistent URL shortener with click tracking.
+
+functional_requirements:
+  - "POST /links accepts JSON {\"url\": \"https://...\", \"code\": \"optional-code\"}. The url is required and must be an absolute http or https URL with a host. A custom code is optional; when omitted, generate a unique code. Codes contain 4 to 20 ASCII letters, digits, hyphens or underscores."
+  - "POST /links returns 201 JSON {\"code\": string, \"url\": string, \"clicks\": 0}. Return the submitted URL unchanged. A duplicate custom code returns 409 JSON with an error field."
+  - "GET /links/{code} returns 200 JSON {\"code\": string, \"url\": string, \"clicks\": integer}. Unknown codes return 404 JSON with an error field."
+  - "GET /r/{code} returns 302 with Location equal to the stored URL and increments clicks exactly once. Unknown codes return 404 JSON with an error field."
+  - "GET /links lists links in ascending creation order as 200 JSON {\"items\": [...], \"total\": integer}. Each item has the same fields as GET /links/{code}."
+  - "Malformed JSON, invalid or missing url, and invalid code return 422 JSON with an error field."
+
+technical_requirements:
+  - "Use the provided relational database and framework's idiomatic persistence layer. Read database settings from the environment; do not hard-code credentials."
+  - "Data and click counts must survive a server restart."
+  - "Provide an executable start.sh in the project root. `sh start.sh` must apply pending migrations and then serve the API in the foreground on 0.0.0.0:8000. Install dependencies while you work, not in start.sh."
+  - "Include a README section explaining how to start the server."
+
+initial_state:
+  mode: build_from_scratch
+
+prompt_template: |
+  You are implementing "$task_name" using $framework $framework_version on
+  $language $language_version. The project lives in the current directory
+  ($workdir), which may contain a stack-provided starter project.
+
+  $description
+
+  Functional requirements:
+  $functional_requirements
+
+  Technical requirements:
+  $technical_requirements
+
+  Environment:
+  $environment_notes
+
+  When you are done, the API will be started with `sh start.sh` and checked by
+  an automated HTTP test suite against exactly the requirements above.
+  Work autonomously until the implementation is complete. Do not ask questions.
+
+supported_stacks: [fastapi, fastapi-latest, laravel, laravel13-boost, express, express-latest]
+
+acceptance_tests:
+  suite: acceptance/
+  app_start_command: [sh, start.sh]
+  app_port: 8000
+
+timeouts:
+  setup_seconds: 600
+  agent_seconds: 1800
+  tests_seconds: 600
+
+default_trials: 3
