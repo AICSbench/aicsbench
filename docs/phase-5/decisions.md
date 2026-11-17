@@ -28,8 +28,11 @@ cannot be done with a default, stop and say so in the PR description.
   Parquet later only changes the build step and the file name.
 - **Verified runs.** A run is verified when its run ID is listed in
   `verified-runs.txt` at the root of the data repository. Only maintainers
-  change that file (enforced by `CODEOWNERS` and a CI check that fails a PR
-  touching it unless the PR author is in `maintainers.txt`). The label never
-  comes from the bundle's own contents.
+  change that file. Two independent controls enforce it: branch protection
+  with "Require review from Code Owners" (owners set in `CODEOWNERS`), and
+  the `guard` check, which runs from the base branch on
+  `pull_request_target` and reads `maintainers.txt` from the base branch, so
+  a PR cannot add its own author. The label never comes from the bundle's
+  own contents. See [tasks/06-data-repo.md](tasks/06-data-repo.md).
 - **JavaScript.** Plain ES modules, no build step, no framework. External
   scripts only from `cdn.jsdelivr.net/npm/` with an exact pinned version.

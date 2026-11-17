@@ -33,7 +33,9 @@ need filtering and grouping on demand, without a server.
    over several harness + model pairs; a model or harness comparison over
    several stacks; and so on) and show the same message instead of a table,
    with the filter the user should set highlighted.
-5. Output: a table and an SVG bar chart, both updated on change; the state
+5. Output: a table and an SVG bar chart, both updated on change. Every
+   value from the data file is inserted with `textContent` or SVG text
+   nodes, never `innerHTML`; the state
    lives in the URL query string so a comparison can be shared and reloaded.
 6. Without JavaScript the page shows a short explanation and links to the
    static leaderboards.

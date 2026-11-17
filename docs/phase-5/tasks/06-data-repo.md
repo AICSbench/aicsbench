@@ -22,24 +22,48 @@ verified-runs.txt                 # one run ID per line, empty at first
 CODEOWNERS                        # verified-runs.txt, maintainers.txt, .github/ → @dyaskur
 submissions/.gitkeep
 .github/pull_request_template.md  # checklist: ran aicsbench submit, agrees to licence
-.github/workflows/validate.yml
+.github/workflows/validate.yml   # pull_request: runs the PR's content, no privileges
+.github/workflows/guard.yml      # pull_request_target: base-branch code only, never the PR's
 .github/workflows/publish.yml
 ```
 
-`validate.yml` (on `pull_request`):
+The two PR workflows split trust on purpose. GitHub runs a `pull_request`
+workflow from the PR's own merge commit, so a PR can rewrite `validate.yml`
+and make it pass. `guard.yml` runs on `pull_request_target`, whose workflow
+file always comes from the base branch, and it never checks out or executes
+anything from the PR. Branch protection requires **both** checks.
 
-1. Checkout with full history of `main` for the duplicate check.
+`validate.yml` (on `pull_request`, `permissions: contents: read`, no
+secrets):
+
+1. Check out the PR, and check out the base branch into `base/` (for
+   example a second `actions/checkout` with `ref: ${{ github.base_ref }}` and
+   `path: base`).
 2. Install the benchmark at a pinned tag or commit:
    `pip install "ai-benchmark[site] @ git+https://github.com/dyaskur/ai-coding-stack-bench@<ref>"`
    (the distribution is named `ai-benchmark`; it installs the `aicsbench` command)
    (the ref lives in one `env:` line).
-3. List the submission folders the PR adds; fail if the PR modifies or
-   deletes anything that already exists on `main` under `submissions/`.
-4. Run `aicsbench validate-submission <added folders> --against submissions/`
-   with the benchmark's own task catalog.
-5. Fail if the PR touches `verified-runs.txt`, `maintainers.txt` or
-   `.github/` and the PR author is not in `maintainers.txt`.
-6. Build the site into a temp dir as a smoke test.
+3. List the submission folders the PR adds (diff against the base).
+4. Run `aicsbench validate-submission <added folders> --against base/submissions/`
+   (admission mode) with the benchmark's own task catalog. The baseline is
+   the base branch, so a new bundle is never compared with itself.
+5. Build the site into a temp dir as a smoke test.
+
+`guard.yml` (on `pull_request_target`, `permissions: contents: read,
+pull-requests: read`, no checkout of the PR head, no execution of PR files):
+
+1. Check out the **base** branch only (the default for
+   `pull_request_target`; never pass the PR's ref or SHA).
+2. List the PR's changed files with the GitHub API
+   (`gh api repos/{owner}/{repo}/pulls/{n}/files --paginate`), treating
+   file names as data.
+3. Fail if any change is a modification, rename or deletion under
+   `submissions/` (only additions are allowed).
+4. Fail if the PR touches `verified-runs.txt`, `maintainers.txt`,
+   `CODEOWNERS` or `.github/`, unless the PR author's login is listed in
+   `maintainers.txt` **as read from the base branch checkout**, so a PR
+   cannot add its own author.
+5. Fail if a non-maintainer PR touches anything outside `submissions/`.
 
 `publish.yml` (on push to `main`, plus manual dispatch):
 
@@ -49,8 +73,9 @@ submissions/.gitkeep
 3. Upload with `actions/upload-pages-artifact` and deploy with
    `actions/deploy-pages`, both pinned to a full commit SHA.
 
-Both workflows: least-privilege `permissions:`, `concurrency` so only the
-latest publish runs, no secrets needed for PRs from forks.
+All workflows: least-privilege `permissions:` per job, every third-party
+action pinned to a full commit SHA, `concurrency` so only the latest publish
+runs, and no secrets available to anything that runs PR content.
 
 ## Part B: bootstrap the real data repository (maintainer step)
 
@@ -60,8 +85,10 @@ The coding agent cannot create GitHub repositories. Document these steps in
 1. Create the public repository `dyaskur/aicsbench-data` (D1), empty.
 2. Copy `templates/data-repo/` into it and push.
 3. Settings → Pages → Source: GitHub Actions.
-4. Settings → Branches: protect `main`, require the `validate` check and one
-   review.
+4. Settings → Branches: protect `main`; require the `validate` and `guard`
+   status checks, one approving review, and **"Require review from Code
+   Owners"** (without it, `CODEOWNERS` only requests a review and does not
+   enforce one). Disallow force pushes.
 5. Submit the existing verified run (`docs/luna-latest-20-trials.md`) with
    `aicsbench submit` from the benchmark server and add its run IDs to
    `verified-runs.txt` in the same or a follow-up PR.
@@ -69,8 +96,14 @@ The coding agent cannot create GitHub repositories. Document these steps in
 ## Acceptance criteria
 
 - [ ] `templates/data-repo/` exists with every file above.
-- [ ] Both workflow files pass `actionlint` (run locally if available; say
-      in the PR if it was not run).
+- [ ] All three workflow files pass `actionlint` (run locally if available;
+      say in the PR if it was not run).
+- [ ] `guard.yml` contains no `actions/checkout` of the PR head (`ref:` or
+      `repository:` pointing at the PR) and runs no file from the PR; a test
+      in this repo parses the YAML and asserts this.
+- [ ] The guard's file-and-author rules live in one small script under
+      `templates/data-repo/.github/scripts/guard.py` with unit tests here
+      (changed-file list and maintainer list in, pass or fail out).
 - [ ] Every third-party action is pinned to a full commit SHA with the
       version in a comment.
 - [ ] A test in this repo builds the site from `templates/data-repo/` plus

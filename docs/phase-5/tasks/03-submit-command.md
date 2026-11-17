@@ -54,8 +54,9 @@ it with a fake; no test touches the network or the real `gh`.
 - [ ] `--dry-run` on a fixture run prints the bundle and exits 0 without
       creating files outside the temp dir.
 - [ ] `--out` writes a bundle that `aicsbench validate-submission` accepts.
-- [ ] A run containing a planted secret in `raw` is refused with the
-      `secret` problem, and nothing is written.
+- [ ] A run containing a planted secret in `raw`, or in a log file with
+      `--with-logs`, is refused with the `secret` problem, and nothing is
+      written.
 - [ ] No absolute path from the host appears anywhere in the bundle
       (test greps the bundle for `tmp_path`).
 - [ ] With the fake `gh` wrapper, the command issues fork, clone, branch,

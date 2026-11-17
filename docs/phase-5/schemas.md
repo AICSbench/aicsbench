@@ -61,19 +61,42 @@ str | None = None` (optional, so older manifests still load).
 - `RunManifest.host`: keep only `platform`, `python`, `machine`.
 - `TrialResult.raw`: kept as is (it is provider output, already secret-free),
   but included in the secret scan.
-- Secret scan (also run by the validator) fails on any string value matching:
-  `sk-[A-Za-z0-9_-]{20,}`, `sk-ant-[A-Za-z0-9_-]{20,}`, `gh[pousr]_[A-Za-z0-9]{30,}`,
-  `xox[baprs]-[A-Za-z0-9-]{10,}`, `-----BEGIN [A-Z ]*PRIVATE KEY-----`,
-  `"refresh_token"`, `"access_token"`, `CLAUDE_CODE_OAUTH_TOKEN=`.
-  The list lives in one constant, `SECRET_PATTERNS`, in
-  `src/ai_benchmark/submission/secrets.py`.
+- Secret scan (also run by the validator), defined in
+  `src/ai_benchmark/submission/secrets.py`. It fails when either:
+  - a string value, or a JSON key, matches a pattern in `SECRET_PATTERNS`:
+    `sk-[A-Za-z0-9_-]{20,}`, `sk-ant-[A-Za-z0-9_-]{20,}`, `gh[pousr]_[A-Za-z0-9]{30,}`,
+    `xox[baprs]-[A-Za-z0-9-]{10,}`, `-----BEGIN [A-Z ]*PRIVATE KEY-----`,
+    `eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.` (a JWT),
+    `(?i)(CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|CODEX_API_KEY)=\S+`;
+  - or a JSON key, compared case-insensitively, is in `SECRET_KEYS`
+    (`access_token`, `refresh_token`, `id_token`, `api_key`, `apikey`,
+    `authorization`, `password`, `client_secret`, `secret`) and its value is
+    a non-empty string. The key's presence alone is fine; its value is not.
+- Log archives: `submit` scans every log file with `SECRET_PATTERNS` (as
+  plain text) **before** compressing it and refuses the bundle on a match.
+  The validator opens each `logs/*.tar.gz` (read-only, regular files only,
+  no member path with `..` or a leading `/`, at most 50 MB uncompressed in
+  total), decodes each member as UTF-8 with replacement, and applies the
+  same patterns.
 
 ## Validation rules
 
-`validate_bundle(path, catalog) -> list[Problem]` in
+`validate_bundle(path, catalog, *, against: Path | None = None,
+check_catalog: bool = True) -> list[Problem]` in
 `src/ai_benchmark/submission/validate.py`; `Problem` has `code`, `path`,
 `message`. An empty list means valid. The CLI command
-`aicsbench validate-submission PATH...` prints problems and exits 1 if any.
+`aicsbench validate-submission PATH... [--against DIR] [--no-catalog-check]`
+prints problems and exits 1 if any.
+
+Two modes:
+
+- **Admission** (`check_catalog=True`, the default): used by `submit` and by
+  the data repository's CI for new bundles. A new bundle must match a task
+  version the current catalog ships.
+- **Rebuild** (`check_catalog=False`): used by the site build for bundles
+  already merged. The `task` and `suite` rules are skipped, so results for a
+  task version the catalog no longer ships stay on the site, shown under
+  their own version. Every other rule still runs.
 
 | Code | Rule |
 | --- | --- |
@@ -81,13 +104,13 @@ str | None = None` (optional, so older manifests still load).
 | `schema` | `submission.json`, `manifest.json` and every trial parse with their pydantic models. |
 | `hash` | Every file's SHA-256 matches `files`; no file missing from or extra to `files`. |
 | `ids` | `run_id`, `task_id`, `task_version` agree across folder names, `submission.json`, manifest and trials; the manifest's `trial_ids` equal the trial files. |
-| `task` | The task ID and version exist in the catalog the validator runs with. |
-| `suite` | `acceptance_suite_sha256` equals the hash of that catalog task's suite. |
+| `task` | (admission only) The task ID and version exist in the catalog the validator runs with. |
+| `suite` | When `suite_hash_source` is `run`, `acceptance_suite_sha256` equals `manifest.acceptance_suite_sha256`. In admission mode it must also equal the hash of the catalog task's suite. |
 | `comparable` | All trials share one `comparability_key()`. |
 | `harness` | Every trial has a non-empty `agent.name` and `agent.version`. |
 | `status` | No trial is `pending` or `running`. |
-| `secret` | No string anywhere in the bundle matches `SECRET_PATTERNS`. |
-| `duplicate` | (data repo only, `--against DIR`) no existing submission has the same `run_id` or the same manifest hash. |
+| `secret` | The secret scan above finds nothing in any JSON file or log archive member. |
+| `duplicate` | (only with `--against DIR`) no bundle under `DIR`, other than the one being validated (compared by resolved path), has the same `run_id` or the same SHA-256 of `manifest.json`. CI passes a checkout of the base branch as `DIR`, so the new bundle is never compared with itself. |
 
 ## Site data file
 
@@ -132,7 +155,12 @@ Every path ends in `/` and is written as `<path>/index.html`.
 | `/methodology/` | How trials run, what each metric means, comparability rules, verified vs community |
 | `/sitemap.xml`, `/robots.txt` | All pages above; `robots.txt` allows all and points at the sitemap |
 
-Slugs: lower case, characters outside `[a-z0-9._-]` replaced by `-`.
+Slugs: lower case, characters outside `[a-z0-9._-]` replaced by `-`. When
+two different values of the same dimension would get the same slug (for
+example `Foo/Bar` and `Foo-Bar`), every value in that colliding set gets
+`-<first 8 hex characters of SHA-256 of the original value>` appended, so
+paths stay distinct and stable across builds. The build asserts no two pages
+share an output path.
 Every page has a unique `<title>`, a `<meta name="description">`, a
 canonical URL from `--base-url`, Open Graph tags, and JSON-LD
 (`Dataset` on task pages, `WebSite` on `/`). Charts are inline SVG generated

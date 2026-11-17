@@ -15,15 +15,19 @@ bundle is. One implementation, used by both, prevents drift.
      [schemas.md](../schemas.md#submissionjson).
    - `suite.py`: `suite_sha256(task_path_or_spec) -> str`, the algorithm in
      [schemas.md](../schemas.md#acceptance-suite-hash).
-   - `secrets.py`: `SECRET_PATTERNS` and `find_secrets(value) -> list[str]`
-     that walks any JSON-like value and returns the JSON paths of matches.
-   - `validate.py`: `validate_bundle(path, catalog, against: Path | None = None)
-     -> list[Problem]`, implementing every rule in
-     [schemas.md](../schemas.md#validation-rules). Return all problems, do not
-     stop at the first.
+   - `secrets.py`: `SECRET_PATTERNS`, `SECRET_KEYS`,
+     `find_secrets(value) -> list[str]` that walks any JSON-like value (keys
+     and values) and returns the JSON paths of matches, and
+     `scan_text(text) -> list[str]` for log files, all as in
+     [schemas.md](../schemas.md#sanitizing).
+   - `validate.py`: `validate_bundle(path, catalog, *, against=None,
+     check_catalog=True) -> list[Problem]`, implementing every rule and both
+     modes in [schemas.md](../schemas.md#validation-rules), including the
+     safe reading of log archives. Return all problems, do not stop at the
+     first.
 2. `RunManifest`: add `acceptance_suite_sha256: str | None = None`;
    the orchestrator fills it in `build_manifest` from the task.
-3. CLI: `aicsbench validate-submission PATH... [--against DIR]`. Prints
+3. CLI: `aicsbench validate-submission PATH... [--against DIR] [--no-catalog-check]`. Prints
    `ok <path>` or one line per problem (`<code> <path>: <message>`), exits 1
    when any bundle has problems. Uses the normal catalog
    (`--tasks-dir`/`--stacks-dir`).
@@ -43,8 +47,17 @@ bundle is. One implementation, used by both, prevents drift.
 - [ ] `suite_sha256` is stable across runs and operating systems (test with
       a fixed tiny suite and a hard-coded expected hash), and ignores
       `__pycache__`.
-- [ ] `find_secrets` flags each pattern in `SECRET_PATTERNS` and returns the
-      JSON path; a test asserts no false positive on the valid fixture.
+- [ ] `find_secrets` flags each pattern in `SECRET_PATTERNS`, and a
+      `SECRET_KEYS` key with a non-empty value (for example
+      `{"access_token": "abc"}`), returning the JSON path; a test asserts no
+      false positive on the valid fixture.
+- [ ] A log archive containing a planted token fails with `secret`; an
+      archive member named `../x` fails with `layout`.
+- [ ] `--against DIR` containing the same bundle path does not report it as
+      a duplicate of itself; a copy of it under another folder does.
+- [ ] With `--no-catalog-check`, a bundle for an unknown task version passes
+      `task` and `suite`, while a `run` bundle whose hash differs from its
+      manifest still fails `suite`.
 - [ ] `aicsbench validate-submission` exit codes: 0 valid, 1 problems,
       2 usage error.
 - [ ] No network access anywhere in this task.

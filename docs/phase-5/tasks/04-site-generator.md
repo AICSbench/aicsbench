@@ -30,8 +30,10 @@ aicsbench [--tasks-dir DIR] site build --data DIR --out DIR --base-url URL
 1. Optional extra in `pyproject.toml`: `site = ["jinja2>=3.1"]`. The
    command prints a clear install hint if Jinja2 is missing.
 2. `src/ai_benchmark/site/`:
-   - `load.py`: read every bundle under `submissions/`, skip (with a
-     warning) any that `validate_bundle` rejects, attach `verified`,
+   - `load.py`: read every bundle under `submissions/`, validate it in
+     rebuild mode (`check_catalog=False`, see
+     [schemas.md](../schemas.md#validation-rules)), skip (with a warning) any
+     that still fails, attach `verified`,
      `logs_available`, `submitted_at`, `submitter`.
    - `pages.py`: compute every page in
      [schemas.md](../schemas.md#site-layout) with `comparison.compare_trials`.
@@ -44,6 +46,11 @@ aicsbench [--tasks-dir DIR] site build --data DIR --out DIR --base-url URL
    - `templates/`: Jinja2 templates (`base.html` with the SEO head, one per
      page type) and one `site.css`. No external fonts or scripts on static
      pages.
+   - Escaping: the Jinja2 `Environment` uses
+     `autoescape=select_autoescape(["html", "xml"])`, and no template uses
+     `|safe` on submitted data (submitter, notes, model, harness, stack and
+     any other string from a bundle). JSON-LD is written with `json.dumps`
+     and every `<`, `>` and `&` replaced by `\u003c`, `\u003e`, `\u0026`.
    - `build.py`: write pages, `data/trials.json`, `data/meta.json`,
      `sitemap.xml`, `robots.txt`, and copy each accepted bundle's
      `submission.json` and `manifest.json` under `/runs/<run_id>/` for
@@ -71,6 +78,12 @@ aicsbench [--tasks-dir DIR] site build --data DIR --out DIR --base-url URL
       build still succeeds.
 - [ ] Pages render with JavaScript disabled (no content depends on JS).
 - [ ] The core install (`pip install -e .`) does not pull Jinja2.
+- [ ] A fixture bundle whose `submitter.name` and `notes` contain
+      `<script>alert(1)</script>` renders escaped on every page, and the
+      JSON-LD block contains no raw `</script>`.
+- [ ] Two models whose slugs collide get distinct, stable page paths.
+- [ ] A bundle for a task version the catalog no longer ships still appears,
+      under its own version.
 
 ## Out of scope
 
