@@ -421,6 +421,10 @@ class BenchmarkOrchestrator:
                     agent_result = self.execute_agent(adapter, agent_task, runner)
                 attempts.append(agent_result)
                 self._record_agent(result, attempts)
+                # Snapshot the implementation before acceptance runs: files the app
+                # creates while being tested (SQLite databases, runtime logs) must
+                # never land in the commit or in the code metrics.
+                self._snapshot_implementation(result, runner, stack)
 
                 _phase(trial.trial_id, f"running acceptance tests after attempt {attempt + 1}")
                 quality, test_logs, tester_ok, feedback = self.run_acceptance_tests(
@@ -452,17 +456,6 @@ class BenchmarkOrchestrator:
                     f"tests. Repair the existing workspace. Test failures:\n{feedback}"
                 )
 
-            change = snapshot_result(runner, stack.workdir)
-            result.workspace_git_commit = change.commit
-            result.metrics.code.lines_of_code = Metric[int].of(
-                change.lines_added,
-                MetricSource.MEASURED,
-                unit="lines",
-                note="lines added since the initial state, excluding dependencies and lockfiles",
-            )
-            result.metrics.code.files_changed = Metric[int].of(
-                change.files_changed, MetricSource.MEASURED
-            )
         except (ExecutionEnvironmentError, ConfigurationError, AgentExecutionError) as exc:
             log.error("trial %s failed: %s", trial.trial_id, exc)
             result.status = TrialStatus.INFRA_ERROR
@@ -562,6 +555,27 @@ class BenchmarkOrchestrator:
             result.error = agent.error
         elif not agent.timed_out and not agent.succeeded:
             result.error = f"agent exited with code {agent.exit_code}"
+
+    def _snapshot_implementation(
+        self, result: TrialResult, runner: CommandRunner, stack: StackSpec
+    ) -> None:
+        """Commit what the agent wrote and measure it against the baseline.
+
+        Called before acceptance tests run, so runtime artefacts the app creates
+        while being tested are never counted as the agent's work. Each repair
+        attempt overwrites the snapshot with the final implementation.
+        """
+        change = snapshot_result(runner, stack.workdir)
+        result.workspace_git_commit = change.commit
+        result.metrics.code.lines_of_code = Metric[int].of(
+            change.lines_added,
+            MetricSource.MEASURED,
+            unit="lines",
+            note="lines added since the initial state, excluding dependencies and lockfiles",
+        )
+        result.metrics.code.files_changed = Metric[int].of(
+            change.files_changed, MetricSource.MEASURED
+        )
 
     def run_acceptance_tests(
         self,

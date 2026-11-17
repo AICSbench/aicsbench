@@ -165,6 +165,36 @@ def test_repair_does_not_retry_broken_tester(env_settings: PlatformSettings) -> 
     assert len([call for call in env.calls if call[0] == "run_job"]) == 1
 
 
+def test_implementation_is_snapshotted_before_acceptance_tests(
+    env_settings: PlatformSettings,
+) -> None:
+    class RepairEnvironment(FakeEnvironment):
+        def run_job(self, *args: Any, **kwargs: Any) -> Any:
+            if len([call for call in self.calls if call[0] == "run_job"]) == 0:
+                self.junit = JUNIT_ONE_FAIL
+                self.tester_exit = 1
+            else:
+                self.junit = JUNIT_ALL_PASS
+                self.tester_exit = 0
+            return super().run_job(*args, **kwargs)
+
+    env = RepairEnvironment()
+    o = build(env_settings, env)
+    o.run(experiment(max_repairs=1, agents=[AgentSelection(agent="costly", model="m1")]))
+    [r] = list(o.store.iter_trials())
+    assert r.status is TrialStatus.PASSED and r.metrics.quality.repair_iterations.value == 1
+
+    commits = [
+        i
+        for i, (step, argv) in enumerate(env.calls)
+        if step == "exec" and any("ai-benchmark: agent result" in a for a in argv)
+    ]
+    suites = [i for i, (step, _) in enumerate(env.calls) if step in {"restart", "run_job"}]
+    assert len(commits) == 2  # one snapshot per attempt, before its acceptance run
+    for attempt, commit in enumerate(commits):
+        assert commit < suites[attempt * 2]
+
+
 def test_parallel_trials_overlap_and_save_results(env_settings: PlatformSettings) -> None:
     barrier = threading.Barrier(2, timeout=5)
 
