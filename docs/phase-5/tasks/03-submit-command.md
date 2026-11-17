@@ -26,9 +26,12 @@ aicsbench submit --run RUN_ID
    `.workspaces/<run>/<trial>/logs/` into `logs/<trial_id>.tar.gz`; a missing
    log folder is a warning and that trial gets no archive.
 3. Run `validate_bundle` on it. Any problem: print them and exit 1, nothing
-   is written or sent. In PR mode (step 6) the fork clone happens first, and
-   validation passes `against=<clone>/submissions` so a run that is already
-   in the data repository is refused before anything is pushed. With
+   is written or sent. In PR mode (step 6) the clones happen first, and
+   validation passes `against=<upstream>/submissions`, where `<upstream>` is
+   a fresh shallow clone of the upstream `aicsbench/data` default branch
+   (not the fork, which may be behind upstream), so a run that is already
+   in the data repository is refused before anything is pushed. The data
+   repository's CI check against its base branch remains the backstop. With
    `--out` or `--dry-run` there is no clone; pass `--against DIR` (a
    checkout of `aicsbench/data`) to run the duplicate check, otherwise the
    command prints that it was skipped.
@@ -64,6 +67,8 @@ it with a fake; no test touches the network or the real `gh`.
       written.
 - [ ] No absolute path from the host appears anywhere in the bundle
       (test greps the bundle for `tmp_path`).
+- [ ] With a stale fork that lacks a run already merged upstream, PR mode
+      refuses that run as a duplicate.
 - [ ] With the fake `gh` wrapper, the command issues fork, clone, branch,
       commit, push and `pr create` in that order, with the documented
       branch name, commit message and title.
