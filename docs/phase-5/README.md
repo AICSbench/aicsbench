@@ -13,7 +13,7 @@ All three live in the GitHub organization `aicsbench` (decision D9):
 | --- | --- | --- |
 | `aicsbench/aicsbench` | This CLI and platform (formerly `dyaskur/ai-coding-stack-bench`). All computation: validation, comparisons, the site export. | 1, 2, 3, 4, 7, 8, 9 |
 | `aicsbench/data` | Submission bundles, `verified-runs.txt`, the PR checks, and the published export on its `export` branch. | 6 |
-| `aicsbench/web` | The Jinja2 renderer, templates, the compare page, and the GitHub Pages deploy. Renders the export, computes nothing. | 10, 5 |
+| `aicsbench/web` | The SvelteKit site (prerendered pages, the DuckDB-WASM compare page) and the GitHub Pages deploy. Renders the export, computes nothing. | 10, 5 |
 
 Steps only the maintainer can do (creating the organization, transferring
 this repository, installing apps, the dispatch token, branch protection)
@@ -77,7 +77,7 @@ on are merged into `main`.
 | 8 | [Framework version per run, pinned stacks](tasks/08-stack-versions.md) | 7 | `aicsbench/aicsbench` |
 | 9 | [Custom model endpoints](tasks/09-custom-endpoints.md) | 1 | `aicsbench/aicsbench` |
 | 6 | [Data repository files and workflows](tasks/06-data-repo.md) | 2, 4, [setup](setup.md) §1 and §3 | `aicsbench/data` |
-| 10 | [Website renderer and deploy](tasks/10-web-site.md) | 4, [setup](setup.md) §1 and §2 | `aicsbench/web` |
+| 10 | [SvelteKit site and deploy](tasks/10-web-site.md) | 4, [setup](setup.md) §1 and §2 | `aicsbench/web` |
 | 5 | [Compare page in the browser](tasks/05-compare-page.md) | 10 | `aicsbench/web` |
 
 Task numbers are stable IDs, not an order; the table is grouped by
@@ -105,7 +105,8 @@ maintainer's setup steps.
    mypy src
    ```
 
-   In `aicsbench/data` and `aicsbench/web`, run what their CI runs.
+   In `aicsbench/data` run what its CI runs; in `aicsbench/web` that is
+   `pnpm install --frozen-lockfile && pnpm check && pnpm lint && pnpm test && pnpm build`.
 5. Update the docs the task names. Set the task's row in **Status** below
    to "done in <repo>#N": in the same PR for this repository, or in a
    small follow-up PR here for tasks in the other two.
@@ -124,8 +125,9 @@ maintainer's setup steps.
   commit message is the PR title plus a short body.
 - **Never** commit credentials, real result files from someone else's
   machine, or anything under `results/` or `.workspaces/`.
-- Dependencies: Phase 5 adds no runtime dependency to `aicsbench`. Jinja2
-  and DuckDB live only in `aicsbench/web`.
+- Dependencies: Phase 5 adds no runtime dependency to `aicsbench`.
+  SvelteKit, DuckDB-WASM and all other JavaScript live only in
+  `aicsbench/web`.
 
 ## Status
 
@@ -137,7 +139,7 @@ maintainer's setup steps.
 | 4 Site export | not started |
 | 5 Compare page | not started |
 | 6 Data repository | not started |
-| 10 Website renderer | not started |
+| 10 SvelteKit site | not started |
 | 7 Installed versions | not started |
 | 8 Stack versions | not started |
 | 9 Custom endpoints | not started |

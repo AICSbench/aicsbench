@@ -9,13 +9,13 @@ cannot be done with a default, stop and say so in the PR description.
 | --- | --- | --- | --- |
 | D1 | Where does submitted data live? | A separate public repository, `aicsbench/data`. | Decided by the maintainer |
 | D2 | Hosting and domain | GitHub Pages from `aicsbench/web`, served at `https://aicsbench.github.io/web/`. The base URL is a setting (`--base-url`), so a custom domain is a config change. | Default (pending) |
-| D3 | Site generator | Python + Jinja2 in `aicsbench/web`. It only renders the export that `aicsbench site export` writes; every number, grouping and page path is computed in this package with `comparison.py`, so the site shows the same numbers as the CLI. A JavaScript generator such as Astro stays an option for later; it would read the same export, so nothing outside `aicsbench/web` changes. | Decided by the maintainer |
+| D3 | Site generator | SvelteKit with `@sveltejs/adapter-static` in `aicsbench/web`: every content page is prerendered to static HTML for search engines, and the compare page queries the data file in the browser with DuckDB-WASM. The web app only renders the export that `aicsbench site export` writes; every number, grouping and page path is computed in this package with `comparison.py`, so the site shows the same numbers as the CLI. | Decided by the maintainer |
 | D4 | Do community runs need logs? | No. Logs are optional for everyone; runs with logs get a "logs available" badge. Default rankings show verified runs only. | Default (pending) |
 | D5 | Data licence | Submitted result data is published under CC BY 4.0; submitting implies agreement (stated in the PR template). Code stays under the repository's licence. | Default (pending) |
 | D6 | Submission path | Pull requests only. No upload API. | Decided by the maintainer |
 | D7 | What a merge produces | Static HTML for search engines plus a data file the browser queries for filters and custom comparisons. | Decided by the maintainer |
 | D8 | Harness | Every trial records its harness (the agent CLI, for example Claude Code, Codex, OpenCode) and the harness version; the site compares by harness, harness version and harness + model. | Decided by the maintainer |
-| D9 | Repositories | GitHub organization `aicsbench` with three public repositories: `aicsbench/aicsbench` (this CLI and platform, transferred from `dyaskur/ai-coding-stack-bench`), `aicsbench/data` (submissions, validation, the published export) and `aicsbench/web` (renderer, templates, compare page, Pages deploy). | Decided by the maintainer |
+| D9 | Repositories | GitHub organization `aicsbench` with three public repositories: `aicsbench/aicsbench` (this CLI and platform, transferred from `dyaskur/ai-coding-stack-bench`), `aicsbench/data` (submissions, validation, the published export) and `aicsbench/web` (SvelteKit site, compare page, Pages deploy). | Decided by the maintainer |
 
 ## Derived defaults (follow these, they are not open questions)
 
@@ -23,12 +23,14 @@ cannot be done with a default, stop and say so in the PR description.
   (the adapter name: `claude`, `codex`, `opencode`) and its version is
   `TrialResult.agent.version`. Code keeps the field names; user-facing text
   (site, CLI help, export columns added in Phase 5) says "harness".
-- **One computation, two renderers.** `aicsbench site export` (in this
+- **One computation, rendered elsewhere.** `aicsbench site export` (in this
   repository) reads `aicsbench/data` and writes the site export: trial rows,
   every page with its precomputed leaderboard rows, and page paths. See
   [schemas.md](schemas.md#site-export). `aicsbench/web` renders that export
-  and never recomputes a number. The only logic it repeats is the compare
-  page's SQL (task 5), which a contract test checks against `compare_trials`.
+  and never recomputes a number. The export ships JSON Schemas for its
+  files, and the web app's types and contract test come from them. The only
+  logic the web app repeats is the compare page's SQL (task 5), which a
+  contract test checks against `compare_trials`.
 - **Cross-repository flow.** A merge to `aicsbench/data` runs the export,
   commits it to the data repository's `export` branch, and sends a
   `repository_dispatch` (`data-published`) to `aicsbench/web`, which
@@ -47,5 +49,8 @@ cannot be done with a default, stop and say so in the PR description.
   `pull_request_target` and reads `maintainers.txt` from the base branch, so
   a PR cannot add its own author. The label never comes from the bundle's
   own contents. See [tasks/06-data-repo.md](tasks/06-data-repo.md).
-- **JavaScript.** Plain ES modules, no build step, no framework. External
-  scripts only from `cdn.jsdelivr.net/npm/` with an exact pinned version.
+- **JavaScript.** Only in `aicsbench/web`: SvelteKit + TypeScript, Node
+  LTS pinned in `.nvmrc`, pnpm with a committed lockfile, every dependency
+  at an exact version. DuckDB-WASM comes from npm and its `.wasm` files are
+  served from the site itself, so the site loads nothing from a third-party
+  origin.

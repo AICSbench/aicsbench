@@ -23,7 +23,9 @@ order. Each step names the task that needs it.
 
 1. Settings → Pages → Source: **GitHub Actions**.
 2. Optional: a custom domain later only changes the data repository's
-   `BASE_URL` variable and the Pages setting (decision D2).
+   `BASE_URL` variable, `BASE_PATH` in `aicsbench/web`'s `deploy.yml`
+   (`/web` today, empty on a custom domain) and the Pages setting
+   (decision D2).
 
 ## 3. `aicsbench/data` (before task 6 is merged)
 

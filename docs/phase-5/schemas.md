@@ -127,9 +127,18 @@ is committed to the data repository's `export` branch on every merge.
   data/trials.json     # one row per trial, see below
   data/meta.json       # {"runs", "trials", "tasks": [{"id", "version", "name", "description"}]}
   pages.json           # every static page, see below
+  schema/export.schema.json   # JSON Schema (draft 2020-12) for export.json
+  schema/trials.schema.json   # ... for data/trials.json
+  schema/meta.schema.json     # ... for data/meta.json
+  schema/pages.schema.json    # ... for pages.json
   runs/<run_id>/submission.json
   runs/<run_id>/manifest.json
 ```
+
+The JSON Schemas are generated from the pydantic models that write the
+export (`model_json_schema()`), so they cannot drift from it. They are the
+contract with `aicsbench/web`: it generates its TypeScript types from them
+and validates every export against them before building.
 
 `export_schema` starts at 1. A change that removes or renames a key bumps
 it. `aicsbench/web` refuses an export whose `export_schema` it does not
@@ -189,7 +198,7 @@ and these keys added only in the export:
 - `refused` is the `compare_trials` error message when a section cannot be
   compared. It is shown instead of a table. Normally the "per ..." splits
   below prevent it.
-- `title` and `description` are plain text. All escaping is the renderer's
+- `title` and `description` are plain text. All escaping is the web app's
   job.
 - Every page with community runs has a second section for them with
   `verified_only: false`, labelled as community results.
@@ -228,7 +237,7 @@ merged. Pages already published never change path.
 Every rendered page has a unique `<title>`, a `<meta name="description">`, a
 canonical URL from the export's `base_url`, Open Graph tags, and JSON-LD
 (`Dataset` on task pages, `WebSite` on `/`). Charts are inline SVG drawn by
-the renderer from `rows`, never images or JavaScript-only.
+the web app from `rows` and prerendered, never images or JavaScript-only.
 
 Leaderboard rows use `comparison.compare_trials`, which refuses a
 comparison that leaves another dimension mixed (for example comparing stacks

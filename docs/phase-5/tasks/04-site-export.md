@@ -29,7 +29,7 @@ aicsbench [--tasks-dir DIR] site export --data DIR --out DIR --base-url URL
 
 ## Changes
 
-1. `src/ai_benchmark/site/` (no new dependency; Jinja2 is **not** used in
+1. `src/ai_benchmark/site/` (no new dependency; no HTML is produced in
    this repository):
    - `load.py`: read every bundle under `submissions/` and validate it in
      rebuild mode (`check_catalog=False`, see
@@ -47,6 +47,9 @@ aicsbench [--tasks-dir DIR] site export --data DIR --out DIR --base-url URL
      - A task with several keys (for example two task versions) gets one
        section per key, newest task version first.
      - Verified and community runs go in separate sections.
+   - `models.py`: pydantic models (`extra="forbid"`) for `export.json`, a
+     trial row, `meta.json` and `pages.json`. The export is written through
+     them, and `schema/*.schema.json` is generated from them.
    - `export.py`: write the export layout in
      [schemas.md](../schemas.md#site-export), including
      `export_schema: 1`, the data repository commit (`git rev-parse HEAD` in
@@ -84,9 +87,11 @@ aicsbench [--tasks-dir DIR] site export --data DIR --out DIR --base-url URL
       unchanged (no HTML escaping here). The fixture includes
       `<script>alert(1)</script>` in `submitter.name` and `notes`, so the
       web repository can test its escaping.
+- [ ] The fixture export validates against its own `schema/*.schema.json`
+      (the test uses the `jsonschema` package as a test-only dependency).
 - [ ] The core install gets no new dependency.
 
 ## Out of scope
 
-HTML, CSS, templates, charts and deployment (task 10, `aicsbench/web`). The
+HTML, CSS, components, charts and deployment (task 10, `aicsbench/web`). The
 compare page (task 5).
