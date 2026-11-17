@@ -34,7 +34,8 @@ bundle is. One implementation, used by both, prevents drift.
 4. Test fixtures in `tests/fixtures/submissions/`: one valid bundle (two
    trials, built from the existing fake orchestrator output, not real data)
    and a helper that copies it to `tmp_path` and breaks one thing per test.
-5. Docs: `docs/phase-5/schemas.md` stays the source of truth; add a short
+5. Docs: CONTRIBUTING.md states that changing a task's acceptance suite
+   requires a new task version. `docs/phase-5/schemas.md` stays the source of truth; add a short
    "Validating a bundle" section to `docs/trial-execution.md` pointing to it.
 
 ## Acceptance criteria
@@ -52,7 +53,12 @@ bundle is. One implementation, used by both, prevents drift.
       `{"access_token": "abc"}`), returning the JSON path; a test asserts no
       false positive on the valid fixture.
 - [ ] A log archive containing a planted token fails with `secret`; an
-      archive member named `../x` fails with `layout`.
+      archive member named `../x` fails with `layout`. Separate cases for a
+      log line `AWS_SECRET_ACCESS_KEY=...`, an `AKIA...` key ID and a JSONL
+      line `{"access_token": "..."}` each fail with `secret`.
+- [ ] `tests/fixtures/suite-hashes.json` lists the hash of every shipped
+      task version's suite, and a test fails when a suite changes without a
+      new task version.
 - [ ] `--against DIR` containing the same bundle path does not report it as
       a duplicate of itself; a copy of it under another folder does.
 - [ ] With `--no-catalog-check`, a bundle for an unknown task version passes

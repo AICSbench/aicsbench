@@ -67,7 +67,9 @@ files.
    `pull_request_target`; never pass the PR's ref or SHA.
 2. List the PR's changed files with the GitHub API
    (`gh api repos/{owner}/{repo}/pulls/{n}/files --paginate`), treating
-   file names as data.
+   file names as data. That endpoint returns at most 3,000 files, so the
+   guard fails if the list has 3,000 entries or its length differs from
+   the PR's `changed_files` count. It never judges an incomplete list.
 3. Run `python .github/scripts/guard.py` (the base branch's copy) with the
    file list, the PR author's login and `maintainers.txt` from the base
    checkout. It fails when:
@@ -83,10 +85,16 @@ files.
 Runs on push to `main` and on `workflow_dispatch`.
 
 1. Job `export`, with `permissions: contents: write`:
+   - Check out the triggering commit (`actions/checkout`, default ref) with
+     `fetch-depth: 0`, so `submissions/`, `verified-runs.txt` and the
+     commit ID are present.
    - Install the benchmark.
    - Run `aicsbench site export --data . --out "$RUNNER_TEMP/export" --base-url "$BASE_URL"`.
      `BASE_URL` comes from a repository variable, with the default from
      decision D2.
+   - Fetch `origin/main`. If the commit being exported is no longer its
+     head, skip the push and the dispatch: a newer run publishes instead.
+     Queued runs are serialized but their order is not guaranteed.
    - Commit the export as the whole content of the `export` branch. Create
      the branch as an orphan the first time. The commit message is
      `data: export <short main sha>`, and the author is
@@ -98,7 +106,8 @@ Runs on push to `main` and on `workflow_dispatch`.
    - This is the only step that sees the token. No `pull_request` workflow
      can read it.
 3. `concurrency: publish` with `cancel-in-progress: false`, so exports never
-   interleave. A newer merge queues behind the running one.
+   interleave. The head check above keeps an older run that starts late
+   from overwriting a newer export.
 
 All workflows: least-privilege `permissions:` per job, every third-party
 action pinned to a full commit SHA with the version in a comment, and no
@@ -109,7 +118,8 @@ secrets available to anything that runs PR content.
 - [ ] Every file above exists.
 - [ ] All workflow files pass `actionlint` (run it if available; say in the
       PR if it was not run).
-- [ ] `tests/test_guard.py` covers each rule: changed-file list,
+- [ ] `tests/test_guard.py` covers each rule, including a refused list of
+      3,000 entries and a list shorter than `changed_files`: changed-file list,
       maintainer list and author in, pass or fail out. It also has a test
       that parses `guard.yml` and asserts there is no `actions/checkout`
       of the PR head (no `ref:` or `repository:` pointing at the PR) and no

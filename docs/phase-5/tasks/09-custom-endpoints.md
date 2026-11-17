@@ -59,8 +59,12 @@ compared with direct runs.
      claude, `openai` for codex, and for opencode the model's
      `<provider>/` prefix.
 
-   Stored trials without these fields still load. For those, `provider` is
-   derived the same way on read.
+   Stored trials without these fields still load, with `provider` set to
+   `unknown`: before this task a gateway could be configured through
+   `auth.env` without being recorded, so the default cannot be assumed.
+   `unknown` is its own provider value, so the one-provider rule never
+   mixes it with a known provider, and the site labels it "provider not
+   recorded".
 4. **Cost.** When an endpoint is set, `cost_usd` is
    `unavailable` with the note "custom endpoint; harness price table does
    not apply", unless the gateway's own cost is parsed, which is out of scope
@@ -98,7 +102,9 @@ compared with direct runs.
       line and no result JSON.
 - [ ] `base_url` with user info or a query string, `http://` to a public
       host, and `endpoint` with `subscription` auth are each config errors.
-- [ ] A stored trial without `provider` loads and gets the derived default.
+- [ ] A stored trial without `provider` loads as `unknown`, and
+      `--by harness` refuses to mix it with a trial whose provider is
+      `openai`.
 - [ ] `submit` writes `custom` for a private gateway host, and
       `validate-submission` rejects an arbitrary host.
 

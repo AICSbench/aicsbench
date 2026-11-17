@@ -72,17 +72,18 @@ on are merged into `main`.
 | 1 | [Harness fields and dimensions](tasks/01-harness-dimensions.md) | none | `aicsbench/aicsbench` |
 | 2 | [Submission bundle and validator](tasks/02-bundle-and-validator.md) | 1 | `aicsbench/aicsbench` |
 | 3 | [`aicsbench submit`](tasks/03-submit-command.md) | 2 | `aicsbench/aicsbench` |
-| 4 | [`aicsbench site export`](tasks/04-site-export.md) | 1 | `aicsbench/aicsbench` |
+| 4 | [`aicsbench site export`](tasks/04-site-export.md) | 1, 2 | `aicsbench/aicsbench` |
 | 7 | [Installed language and framework versions](tasks/07-installed-versions.md) | none | `aicsbench/aicsbench` |
 | 8 | [Framework version per run, pinned stacks](tasks/08-stack-versions.md) | 7 | `aicsbench/aicsbench` |
 | 9 | [Custom model endpoints](tasks/09-custom-endpoints.md) | 1 | `aicsbench/aicsbench` |
 | 6 | [Data repository files and workflows](tasks/06-data-repo.md) | 2, 4, [setup](setup.md) §1 and §3 | `aicsbench/data` |
 | 10 | [SvelteKit site and deploy](tasks/10-web-site.md) | 4, [setup](setup.md) §1 and §2 | `aicsbench/web` |
-| 5 | [Compare page in the browser](tasks/05-compare-page.md) | 10 | `aicsbench/web` |
+| 5 | [Compare page in the browser](tasks/05-compare-page.md) | 1, 10 | `aicsbench/web` |
 
 Task numbers are stable IDs, not an order; the table is grouped by
-repository. Tasks 2, 4, 7 and 9 can run in parallel once task 1 is merged
-(7 does not even need 1). Do 7 and 8 before real submissions start so
+repository. Tasks 2, 7 and 9 can run in parallel once task 1 is merged
+(7 does not even need 1), and task 4 follows task 2. The task 7 export
+keys are added by whichever of tasks 4 and 7 merges second. Do 7 and 8 before real submissions start so
 public runs carry exact, pinned versions. Tasks 6 and 10 wait for the
 maintainer's setup steps.
 

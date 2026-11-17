@@ -28,7 +28,11 @@ nothing calls it a harness. See [decisions.md](../decisions.md) D8 and the
    `openai/gpt-6-luna` (OpenCode uses `provider/model` and does not report
    the model). Today `--by agent` refuses that pair as "mixes models". Add
    `AgentRecord.model_key` (a property, not stored): `model_label` in lower
-   case with a leading `<provider>/` removed. Use `model_key` wherever a
+   case, with its first `<provider>/` segment removed **only for harnesses
+   whose model IDs are `provider/model`** (today only `opencode`). Other
+   labels are unchanged, so a gateway model ID such as `openai/gpt-6-luna`
+   on Codex keeps its prefix and matches OpenCode's
+   `openrouter/openai/gpt-6-luna` after the strip (task 9). Use `model_key` wherever a
    rule asks for "one model" across harnesses (`AGENT`, `HARNESS`,
    `HARNESS_VERSION`) and for the site's harness pages. `MODEL` and
    `AGENT_MODEL` grouping keep using `model_label`, so existing output is

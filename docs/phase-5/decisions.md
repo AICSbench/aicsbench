@@ -14,7 +14,7 @@ cannot be done with a default, stop and say so in the PR description.
 | D5 | Data licence | Submitted result data is published under CC BY 4.0; submitting implies agreement (stated in the PR template). Code stays under the repository's licence. | Default (pending) |
 | D6 | Submission path | Pull requests only. No upload API. | Decided by the maintainer |
 | D7 | What a merge produces | Static HTML for search engines plus a data file the browser queries for filters and custom comparisons. | Decided by the maintainer |
-| D8 | Harness | Every trial records its harness (the agent CLI, for example Claude Code, Codex, OpenCode) and the harness version; the site compares by harness, harness version and harness + model. | Decided by the maintainer |
+| D8 | Harness | Every trial records its harness (the agent CLI, for example Claude Code, Codex, OpenCode) and the harness version; the site compares by harness, harness version and harness + model. A local trial whose CLI reported no version still completes and shows as `unknown` in local comparisons (task 1), but such a run cannot be submitted: the `harness` admission rule rejects it, so every public trial has a version. | Decided by the maintainer |
 | D9 | Repositories | GitHub organization `aicsbench` with three public repositories: `aicsbench/aicsbench` (this CLI and platform, transferred from `dyaskur/ai-coding-stack-bench`), `aicsbench/data` (submissions, validation, the published export) and `aicsbench/web` (SvelteKit site, compare page, Pages deploy). | Decided by the maintainer |
 
 ## Derived defaults (follow these, they are not open questions)

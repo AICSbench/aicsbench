@@ -34,8 +34,10 @@ different releases while reporting the same `framework_version: "13"`.
    installs `fastapi==${FRAMEWORK_VERSION}` after the requirements.
 3. **Selecting a version.** A stack entry in `--stacks` and in the
    experiment config's `stacks` may be `id@version`:
-   - The version must match `^[0-9]+(\.[0-9A-Za-z-]+)*$`: exact versions
-     only, no ranges (`^`, `~`, `*`, `>=`), and nothing that could be shell
+   - The version must match
+     `^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$`: exactly
+     three numeric parts and an optional pre-release tag, so no ranges
+     (`^`, `~`, `*`, `>=`, `5.2.x`, `5.2`), and nothing that could be shell
      syntax. Anything else is a usage error (exit 2).
    - `@version` on a stack without `framework_version_param` is a usage
      error that names the stack.
@@ -56,6 +58,13 @@ different releases while reporting the same `framework_version: "13"`.
    `--by stack` groups by `environment.stack`, two versions show as two rows
    and are never averaged together. Stack-axis comparisons still require
    one model (existing rule).
+
+   `--by framework` and `--by language` group by name only. `compare_trials`
+   therefore refuses them when one group mixes declared versions, with
+   `"framework comparison mixes versions of one framework; compare by stack
+   or filter to one version"` (and the same for language). This also covers
+   two stack files that declare different versions, which is possible
+   today.
 6. **Mismatch check.** After task 7's probes run, if
    `installed_versions["framework"]` exists and does not equal the selected
    version, log a warning and record it in the trial's `error` field. Do
@@ -75,13 +84,14 @@ different releases while reporting the same `framework_version: "13"`.
       `5.2.1`. With a fake Docker CLI, the build receives
       `--build-arg FRAMEWORK_VERSION=5.2.1` and the image tag contains
       `5.2.1`.
-- [ ] `--stacks express-latest@^5.2`, `@latest`, `@5.2;rm -rf /` and
-      `@1.0` on a stack without the parameter each exit 2 with a clear
+- [ ] `--stacks express-latest@^5.2`, `@5.2.x`, `@5.2`, `@latest`,
+      `@5.2;rm -rf /`, and `@1.0.0` on a stack without the parameter each exit 2 with a clear
       message, and nothing runs.
 - [ ] `--stacks express-latest@5.3.0` (the default) gives stack label
       `express-latest`.
 - [ ] `aicsbench compare --by stack` on a run with two versions of one
-      stack shows two rows.
+      stack shows two rows, and `--by framework` on the same run is
+      refused with the versions message.
 - [ ] A stored trial from before this change loads and compares exactly as
       before.
 - [ ] `laravel13-boost.yaml` contains no version range; a test asserts that

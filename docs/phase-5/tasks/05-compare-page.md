@@ -1,7 +1,8 @@
 # Task 5: compare page in the browser
 
 **Repository:** `aicsbench/web` · **Branch:** `feat/compare-page` ·
-**Depends on:** task 10 · **Commit scope:** `site`
+**Depends on:** tasks 1 (harness dimensions) and 10 ·
+**Commit scope:** `site`
 
 ## Why
 

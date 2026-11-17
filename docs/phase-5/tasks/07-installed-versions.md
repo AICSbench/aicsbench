@@ -33,9 +33,11 @@ an agent can upgrade a package during the trial.
    `["framework"]`, `None` when missing) at the end, after the task 1
    columns. Existing keys keep their meaning: `language_version` and
    `framework_version` stay the declared values.
-5. Comparisons are unchanged. `comparability_key` keeps using the declared
-   stack versions, because two trials of one stack must stay comparable even
-   if a patch release differs. The site shows the installed version next to
+5. Comparisons are unchanged: installed versions are recorded and shown,
+   but they are not part of `comparability_key` or of any grouping, so two
+   trials of one stack stay comparable even if a patch release differs.
+   (Declared versions are not in `comparability_key` either; task 8 covers
+   comparisons across declared versions.) The site shows the installed version next to
    the stack and lists every distinct installed version on the stack page.
 6. Add probes to the stacks in `benchmarks/stacks/`:
 

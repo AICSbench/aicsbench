@@ -66,7 +66,8 @@ README.md                      # what this repo is, how to preview locally
      escape.
    - `{@html}` is used in exactly one place: `SeoHead`'s JSON-LD. It
      serializes with `JSON.stringify` and replaces every `<`, `>` and `&`
-     with `<`, `>` and `&`.
+     with `\u003c`, `\u003e` and `\u0026` (Unicode escapes, not HTML entities), so a
+     `</script>` in any value cannot close the script element.
    - An ESLint rule (`svelte/no-at-html-tags`) is on, with a single
      reviewed disable comment at that spot.
 6. **SEO.** Every page has a unique `<title>`, a meta description, a

@@ -37,13 +37,28 @@ order. Each step names the task that needs it.
 2. Add it to `aicsbench/data` under Settings → Secrets and variables →
    Actions as the secret `WEB_DISPATCH_TOKEN`.
 3. Add the repository variable `BASE_URL` = `https://aicsbench.github.io/web/`.
-4. Protect `main` (Settings → Branches or Rulesets):
+4. Settings → Actions → General: make sure workflows may run on
+   `pull_request_target` for this repository (GitHub has announced
+   stricter defaults for that event on public repositories; if the setting
+   exists, allow it here). Without it the required `guard` check never
+   runs and no PR can merge.
+5. Protect `main` (Settings → Rulesets). Do this **after** task 6's
+   bootstrap PR is merged: `guard.yml` runs from the base branch, so it
+   cannot report on the PR that adds it. Merge that one PR with the
+   maintainer's review and a green `validate`, then turn on:
    - require the `validate` and `guard` status checks;
    - require one approving review, with **Require review from Code Owners**
      on (without it, `CODEOWNERS` only requests a review and does not
      enforce one);
-   - disallow force pushes and deletions.
-5. Protect `export`: only GitHub Actions may push (a ruleset that restricts
+   - disallow force pushes and deletions;
+   - while `dyaskur` is the only maintainer: GitHub does not let an author
+     approve their own PR, so a maintainer's own change to
+     `verified-runs.txt` can never get a Code Owner approval. Add
+     `dyaskur` as a bypass actor in **pull requests only** mode. The
+     `guard` check still runs and still requires the author to be a
+     maintainer. Remove the bypass once a second maintainer is in
+     `maintainers.txt` and `CODEOWNERS`.
+6. Protect `export`: only GitHub Actions may push (a ruleset that restricts
    updates, with the Actions integration as the only bypass), and no force
    pushes.
 

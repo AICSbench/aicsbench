@@ -14,7 +14,7 @@ the data repository would reject or that leaks local details.
 aicsbench submit --run RUN_ID
                  [--name NAME] [--github HANDLE] [--notes TEXT]
                  [--with-logs] [--out DIR] [--dry-run]
-                 [--data-repo aicsbench/data]
+                 [--data-repo aicsbench/data] [--against DIR]
 ```
 
 1. Load the run from the result store. Refuse if any trial is still
@@ -26,7 +26,12 @@ aicsbench submit --run RUN_ID
    `.workspaces/<run>/<trial>/logs/` into `logs/<trial_id>.tar.gz`; a missing
    log folder is a warning and that trial gets no archive.
 3. Run `validate_bundle` on it. Any problem: print them and exit 1, nothing
-   is written or sent.
+   is written or sent. In PR mode (step 6) the fork clone happens first, and
+   validation passes `against=<clone>/submissions` so a run that is already
+   in the data repository is refused before anything is pushed. With
+   `--out` or `--dry-run` there is no clone; pass `--against DIR` (a
+   checkout of `aicsbench/data`) to run the duplicate check, otherwise the
+   command prints that it was skipped.
 4. `--dry-run`: print the file list with sizes and the validation result,
    then exit 0.
 5. `--out DIR`: copy the bundle to `DIR/submissions/<task>/<run>/` and stop

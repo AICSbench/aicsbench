@@ -1,9 +1,9 @@
 # Task 4: `aicsbench site export`
 
 **Repository:** `aicsbench/aicsbench` (this one) · **Branch:**
-`feat/phase5-site-export` · **Depends on:** task 1 (task 2 for loading
-bundles; until it is merged, load bundles with plain pydantic parsing and
-switch to `submission.models` after) · **Commit scope:** `site`, `cli`
+`feat/phase5-site-export` · **Depends on:** tasks 1 and 2 (rebuild-mode
+`validate_bundle`). The task 7 columns are optional in the export models;
+if task 7 is not merged yet, the second of the two PRs adds them · **Commit scope:** `site`, `cli`
 
 ## Why
 
@@ -46,6 +46,10 @@ aicsbench [--tasks-dir DIR] site export --data DIR --out DIR --base-url URL
        `comparability_key`.
      - A task with several keys (for example two task versions) gets one
        section per key, newest task version first.
+     - Within one key, trials are also split by `acceptance_suite_sha256`,
+       so runs scored by different acceptance tests are never ranked
+       together. The section heading names the suite hash's first 8
+       characters when a task version has more than one.
      - Verified and community runs go in separate sections.
    - `models.py`: pydantic models (`extra="forbid"`) for `export.json`, a
      trial row, `meta.json` and `pages.json`. The export is written through
@@ -53,7 +57,9 @@ aicsbench [--tasks-dir DIR] site export --data DIR --out DIR --base-url URL
    - `export.py`: write the export layout in
      [schemas.md](../schemas.md#site-export), including
      `export_schema: 1`, the data repository commit (`git rev-parse HEAD` in
-     `--data`, or `null` if it is not a git checkout), and copies of each
+     `--data`, but only when `git -C <data> rev-parse --show-toplevel`
+     resolves to `--data` itself; a folder inside some other repository, or
+     no repository, gives `null`), and copies of each
      accepted bundle's `submission.json` and `manifest.json` under
      `runs/<run_id>/`.
 2. `tests/fixtures/site-export/`: a committed export produced from the
@@ -83,6 +89,10 @@ aicsbench [--tasks-dir DIR] site export --data DIR --out DIR --base-url URL
 - [ ] A bundle for a task version the catalog no longer ships still appears,
       under its own version.
 - [ ] Unavailable means are `null` in `rows`, never `0`.
+- [ ] Two bundles of one task version with different suite hashes land in
+      different sections.
+- [ ] `--data` pointing at a plain folder inside this repository records
+      `data_commit: null`.
 - [ ] Submitted strings (`submitter`, `notes`, model, harness) are copied
       unchanged (no HTML escaping here). The fixture includes
       `<script>alert(1)</script>` in `submitter.name` and `notes`, so the

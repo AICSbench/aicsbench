@@ -59,25 +59,42 @@ str | None = None` (optional, so older manifests still load).
   (`logs/<trial_id>.tar.gz#<original file name>`) when logs are included,
   otherwise the key is kept with value `""`. No absolute host paths survive.
 - `RunManifest.host`: keep only `platform`, `python`, `machine`.
-- `TrialResult.raw`: kept as is (it is provider output, already secret-free),
-  but included in the secret scan.
+- Host paths: in every string of the manifest and the trials (including
+  `raw` and `error`), `submit` replaces the run's results folder, its
+  workspace folder and the user's home folder with `<results>`,
+  `<workspace>` and `~`. `raw` is otherwise kept as is and included in the
+  secret scan. The validator cannot know another machine's paths, so this
+  is `submit`'s job, and its test greps the bundle for the test's temp
+  path.
 - Secret scan (also run by the validator), defined in
   `src/ai_benchmark/submission/secrets.py`. It fails when either:
   - a string value, or a JSON key, matches a pattern in `SECRET_PATTERNS`:
     `sk-[A-Za-z0-9_-]{20,}`, `sk-ant-[A-Za-z0-9_-]{20,}`, `gh[pousr]_[A-Za-z0-9]{30,}`,
     `xox[baprs]-[A-Za-z0-9-]{10,}`, `-----BEGIN [A-Z ]*PRIVATE KEY-----`,
     `eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.` (a JWT),
-    `(?i)(CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|CODEX_API_KEY)=\S+`;
+    `(?i)(CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY|OPENAI_API_KEY|CODEX_API_KEY)=\S+`,
+    `(A3T[A-Z0-9]|AKIA|ASIA)[A-Z0-9]{16}` (an AWS access key ID),
+    `\b[A-Z0-9_]*(SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|ACCESS_KEY)[A-Z0-9_]*=["']?(?=[^\s"']*[A-Za-z])[^\s"']{8,}`
+    (an env-style assignment of an upper-case, secret-named variable to a
+    value with at least one letter, which covers `AWS_SECRET_ACCESS_KEY=...`
+    but not `MAX_TOKENS=200000`);
   - or a JSON key, compared case-insensitively, is in `SECRET_KEYS`
     (`access_token`, `refresh_token`, `id_token`, `api_key`, `apikey`,
     `authorization`, `password`, `client_secret`, `secret`) and its value is
     a non-empty string. The key's presence alone is fine; its value is not.
-- Log archives: `submit` scans every log file with `SECRET_PATTERNS` (as
-  plain text) **before** compressing it and refuses the bundle on a match.
+- Log archives: `submit` scans every log file **before** compressing it and
+  refuses the bundle on a match. Each file is scanned as plain text with
+  `SECRET_PATTERNS` plus one more pattern for structured secrets:
+  `(?i)["']?(access_token|refresh_token|id_token|api_key|apikey|authorization|password|client_secret|secret)["']?\s*[:=]\s*["'][^"']{4,}["']`
+  (a quoted value only, so `"secret": false` is fine).
+  Every line that parses as JSON (JSONL logs) and every `*.json` file is
+  also checked with `find_secrets`, so `SECRET_KEYS` apply there too.
   The validator opens each `logs/*.tar.gz` (read-only, regular files only,
   no member path with `..` or a leading `/`, at most 50 MB uncompressed in
   total), decodes each member as UTF-8 with replacement, and applies the
-  same patterns.
+  same checks.
+- The scan is a safety net, not a guarantee. Logs are opt-in
+  (`--with-logs`), and the PR template asks the submitter to read them.
 
 ## Validation rules
 
@@ -106,7 +123,7 @@ Two modes:
 | `hash` | Every file's SHA-256 matches `files`; no file missing from or extra to `files`. |
 | `ids` | `run_id`, `task_id`, `task_version` agree across folder names, `submission.json`, manifest and trials; the manifest's `trial_ids` equal the trial files. |
 | `task` | (admission only) The task ID and version exist in the catalog the validator runs with. |
-| `suite` | When `suite_hash_source` is `run`, `acceptance_suite_sha256` equals `manifest.acceptance_suite_sha256`. In admission mode it must also equal the hash of the catalog task's suite. |
+| `suite` | A task version's acceptance suite never changes: editing a suite requires a new task version (CONTRIBUTING.md says so, and task 2 adds a test that the shipped tasks' hashes match a committed list). When `suite_hash_source` is `run`, `acceptance_suite_sha256` equals `manifest.acceptance_suite_sha256`. In admission mode it must also equal the hash of the catalog task's suite. |
 | `comparable` | All trials share one `comparability_key()`. |
 | `harness` | Every trial has a non-empty `agent.name` and `agent.version`. |
 | `status` | No trial is `pending` or `running`. |
@@ -224,8 +241,9 @@ Every path ends in `/` and is written as `<path>/index.html`.
 Slugs depend only on the value, never on which other values exist, so a
 page path never changes when new data arrives. The base slug is the value in
 lower case with characters outside `[a-z0-9._-]` replaced by `-`. If the base
-slug equals the original value (for example `gpt-6-luna`) and does not end
-in `-` plus 8 hex characters, it is the slug. Otherwise the slug is the base
+slug equals the original value (for example `gpt-6-luna`), does not start
+with `.` and does not end in `-` plus 8 hex characters, it is the slug. So
+`.` and `..` never become path segments of their own. Otherwise the slug is the base
 slug plus `-<first 8 hex characters of SHA-256 of the original value>`, so
 `Foo/Bar` and `Foo-Bar` get distinct paths, and a value that already looks
 like a suffixed slug (`foo-bar-c84b3c5b`) is suffixed again instead of taking
