@@ -37,11 +37,13 @@ order. Each step names the task that needs it.
 2. Add it to `aicsbench/data` under Settings → Secrets and variables →
    Actions as the secret `WEB_DISPATCH_TOKEN`.
 3. Add the repository variable `BASE_URL` = `https://aicsbench.github.io/web/`.
-4. Settings → Actions → General: make sure workflows may run on
-   `pull_request_target` for this repository (GitHub has announced
-   stricter defaults for that event on public repositories; if the setting
-   exists, allow it here). Without it the required `guard` check never
-   runs and no PR can merge.
+4. Allow `pull_request_target` for `guard.yml`. GitHub restricts that event
+   on public repositories by default; the setting is an event policy under
+   Settings → Actions → Policies (see GitHub's "Control workflow execution"
+   docs). Create or update a policy for `aicsbench/data` that explicitly
+   allows `pull_request_target` for `.github/workflows/guard.yml`, and check
+   that the organization's Actions policies do not block it. Without it the
+   required `guard` check never runs and no PR can merge.
 5. Protect `main` with two rulesets (Settings → Rulesets). A bypass actor
    skips every rule in its ruleset, so the checks and the review live in
    separate rulesets. Do this **after** task 6's bootstrap PR is merged:
