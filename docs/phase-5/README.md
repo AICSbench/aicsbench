@@ -58,8 +58,9 @@ on are merged into `main`.
 | 6 | [Data repository template and workflows](tasks/06-data-repo.md) | 2, 4 | this repo, then the data repo |
 | 7 | [Installed language and framework versions](tasks/07-installed-versions.md) | none | this repo |
 | 8 | [Framework version per run, pinned stacks](tasks/08-stack-versions.md) | 7 | this repo |
+| 9 | [Custom model endpoints](tasks/09-custom-endpoints.md) | 1 | this repo |
 
-Tasks 2 and 4 can run in parallel once task 1 is merged. Tasks 7 and 8 are independent of the others (8 needs 7); do them before real submissions start so public runs carry exact, pinned versions.
+Tasks 2 and 4 can run in parallel once task 1 is merged. Tasks 7 and 8 are independent of the others (8 needs 7); do them before real submissions start so public runs carry exact, pinned versions. Task 9 can start once task 1 is merged.
 
 ## How to work on a task
 
@@ -111,3 +112,4 @@ Tasks 2 and 4 can run in parallel once task 1 is merged. Tasks 7 and 8 are indep
 | 6 Data repository | not started |
 | 7 Installed versions | not started |
 | 8 Stack versions | not started |
+| 9 Custom endpoints | not started |
