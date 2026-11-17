@@ -1,0 +1,54 @@
+# Task 2: submission bundle and validator
+
+**Branch:** `feat/phase5-submission-validator` · **Depends on:** task 1 ·
+**Commit scope:** `submission`, `models`, `orchestrator`, `cli`
+
+## Why
+
+The data repository's CI and `aicsbench submit` must agree on what a valid
+bundle is. One implementation, used by both, prevents drift.
+
+## Changes
+
+1. New package `src/ai_benchmark/submission/`:
+   - `models.py`: `SubmissionInfo`, `Submitter`, `Problem` exactly as in
+     [schemas.md](../schemas.md#submissionjson).
+   - `suite.py`: `suite_sha256(task_path_or_spec) -> str`, the algorithm in
+     [schemas.md](../schemas.md#acceptance-suite-hash).
+   - `secrets.py`: `SECRET_PATTERNS` and `find_secrets(value) -> list[str]`
+     that walks any JSON-like value and returns the JSON paths of matches.
+   - `validate.py`: `validate_bundle(path, catalog, against: Path | None = None)
+     -> list[Problem]`, implementing every rule in
+     [schemas.md](../schemas.md#validation-rules). Return all problems, do not
+     stop at the first.
+2. `RunManifest`: add `acceptance_suite_sha256: str | None = None`;
+   the orchestrator fills it in `build_manifest` from the task.
+3. CLI: `aicsbench validate-submission PATH... [--against DIR]`. Prints
+   `ok <path>` or one line per problem (`<code> <path>: <message>`), exits 1
+   when any bundle has problems. Uses the normal catalog
+   (`--tasks-dir`/`--stacks-dir`).
+4. Test fixtures in `tests/fixtures/submissions/`: one valid bundle (two
+   trials, built from the existing fake orchestrator output, not real data)
+   and a helper that copies it to `tmp_path` and breaks one thing per test.
+5. Docs: `docs/phase-5/schemas.md` stays the source of truth; add a short
+   "Validating a bundle" section to `docs/trial-execution.md` pointing to it.
+
+## Acceptance criteria
+
+- [ ] The valid fixture returns no problems.
+- [ ] One test per problem code, each breaking exactly one rule and
+      asserting exactly that code.
+- [ ] A manifest written before this change (no `acceptance_suite_sha256`)
+      still loads.
+- [ ] `suite_sha256` is stable across runs and operating systems (test with
+      a fixed tiny suite and a hard-coded expected hash), and ignores
+      `__pycache__`.
+- [ ] `find_secrets` flags each pattern in `SECRET_PATTERNS` and returns the
+      JSON path; a test asserts no false positive on the valid fixture.
+- [ ] `aicsbench validate-submission` exit codes: 0 valid, 1 problems,
+      2 usage error.
+- [ ] No network access anywhere in this task.
+
+## Out of scope
+
+Writing bundles (task 3), the data repository (task 6).
