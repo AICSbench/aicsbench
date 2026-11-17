@@ -42,22 +42,26 @@ order. Each step names the task that needs it.
    stricter defaults for that event on public repositories; if the setting
    exists, allow it here). Without it the required `guard` check never
    runs and no PR can merge.
-5. Protect `main` (Settings → Rulesets). Do this **after** task 6's
-   bootstrap PR is merged: `guard.yml` runs from the base branch, so it
-   cannot report on the PR that adds it. Merge that one PR with the
-   maintainer's review and a green `validate`, then turn on:
-   - require the `validate` and `guard` status checks;
-   - require one approving review, with **Require review from Code Owners**
-     on (without it, `CODEOWNERS` only requests a review and does not
-     enforce one);
-   - disallow force pushes and deletions;
-   - while `dyaskur` is the only maintainer: GitHub does not let an author
+5. Protect `main` with two rulesets (Settings → Rulesets). A bypass actor
+   skips every rule in its ruleset, so the checks and the review live in
+   separate rulesets. Do this **after** task 6's bootstrap PR is merged:
+   `guard.yml` runs from the base branch, so it cannot report on the PR
+   that adds it. Merge that one PR with the maintainer's review and a green
+   `validate`, then create:
+   - **`main-checks`**, with no bypass actors: require the `validate` and
+     `guard` status checks, and disallow force pushes and deletions. Nobody
+     can merge past these, including the maintainer.
+   - **`main-review`**: require one approving review, with **Require review
+     from Code Owners** on (without it, `CODEOWNERS` only requests a review
+     and does not enforce one).
+   - While `dyaskur` is the only maintainer, GitHub does not let an author
      approve their own PR, so a maintainer's own change to
-     `verified-runs.txt` can never get a Code Owner approval. Add
-     `dyaskur` as a bypass actor in **pull requests only** mode. The
-     `guard` check still runs and still requires the author to be a
-     maintainer. Remove the bypass once a second maintainer is in
-     `maintainers.txt` and `CODEOWNERS`.
+     `verified-runs.txt` can never get a Code Owner approval. Give
+     `main-review` (only) a bypass in **pull requests only** mode. Bypass
+     actors are roles, teams or apps, so use a `maintainers` team in the
+     organization containing `dyaskur` (or the Repository admin role). The
+     checks in `main-checks` still apply to those merges. Remove the bypass
+     once a second maintainer is in `maintainers.txt` and `CODEOWNERS`.
 6. Protect `export`: only GitHub Actions may push (a ruleset that restricts
    updates, with the Actions integration as the only bypass), and no force
    pushes.
