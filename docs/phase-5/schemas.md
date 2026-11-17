@@ -145,7 +145,7 @@ Every path ends in `/` and is written as `<path>/index.html`.
 
 | Path | Content |
 | --- | --- |
-| `/` | What the benchmark measures, latest runs, leaderboard per task (pass rate, then mean agent time) for verified runs |
+| `/` | What the benchmark measures, latest runs, leaderboard per task for verified runs, ordered as `compare_trials` orders it (lowest mean agent time over passed trials first) with the success rate shown beside it |
 | `/tasks/<task>/` | Task description, its versions, a harness + model leaderboard per stack, and a stack leaderboard per harness + model |
 | `/tasks/<task>/harnesses/<harness>/` | That harness on that task: by model (per stack), by stack (per model), by harness version (per model and stack) |
 | `/tasks/<task>/models/<model>/` | That model: by harness (per stack), by stack (per harness) |
