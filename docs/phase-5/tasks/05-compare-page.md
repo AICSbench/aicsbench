@@ -23,7 +23,8 @@ need filtering and grouping on demand, without a server.
    - Task (required; it fixes `task` and `task_version`, newest version
      selected by default).
    - Compare by: harness, harness version, model, harness + model, stack,
-     language, framework (and provider once task 9 is merged).
+     language, framework (and provider once task 9 is merged), or a
+     combination of up to 3 of them (task 1 item 5).
    - Filters: harness, harness version, model, stack, language, framework,
      tooling mode, auth mode, repairs, parallel, verified only (default on),
      exclude rate-limited (default on), submitted after (date).
@@ -92,7 +93,7 @@ need filtering and grouping on demand, without a server.
    | `view` | `matrix` for the matrix view (item 6) | single task |
    | `task` | task ID (required); in the matrix view several, comma-separated, each optionally `<id>@<version>` | none: the page asks for it |
    | `v` | task version (single-task view only) | newest |
-   | `by` | `harness`, `harness_version`, `model`, `harness_model`, `stack`, `language`, `framework`, `provider` | `harness_model` |
+   | `by` | one dimension, or up to 3 comma-separated (task 1 item 5): `harness`, `harness_version`, `model`, `harness_model`, `stack`, `language`, `framework`, `provider` | `harness,model` |
    | `harness`, `harness_version`, `model`, `stack`, `language`, `framework`, `provider` | filters, comma-separated | all |
    | `mode`, `auth` | tooling mode, auth mode | all |
    | `repairs`, `parallel` | repair budget, parallelism | all |
@@ -109,6 +110,11 @@ need filtering and grouping on demand, without a server.
    Matrix examples:
    - models across three tasks, one harness and stack:
      `/compare/?view=matrix&task=url-shortener-api,todo-api,auth-api&by=model&harness=claude&stack=fastapi-latest`
+   - stack + model rows (one harness), so Laravel + Opus and FastAPI + Opus
+     are separate rows:
+     `/compare/?view=matrix&task=url-shortener-api,todo-api&by=stack,model&harness=claude`
+   - language + model rows, pooling each language's stacks:
+     `/compare/?view=matrix&task=url-shortener-api,todo-api&by=language,model&harness=claude`
    - harness + model pairs on one stack, one task pinned to a version:
      `/compare/?view=matrix&task=url-shortener-api@1.0.0,todo-api&stack=laravel13-boost`
 

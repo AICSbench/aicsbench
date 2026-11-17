@@ -44,18 +44,36 @@ nothing calls it a harness. See [decisions.md](../decisions.md) D8 and the
    - `HARNESS_VERSION` needs one harness, one model and one stack, with the
      message `"harness version comparison mixes harnesses, models or stacks;
      filter to one of each"`.
-5. `src/ai_benchmark/reporting.py`, `trial_row`: add `harness`,
+5. **Combined dimensions.** `compare_trials(by=...)` also takes a list of
+   dimensions; each row is one combination of their values, for example
+   `by=[STACK, MODEL]` gives rows like `laravel13-boost + claude-opus-5-5`.
+   - At most 3 dimensions, no duplicates; a single dimension behaves
+     exactly as today. `HARNESS_MODEL` is the same as `[HARNESS, MODEL]`
+     (and `AGENT_MODEL` as `[AGENT, MODEL]`).
+   - The refusals generalize to one rule: each axis the single-dimension
+     rules hold fixed (harness, model key, stack, and provider after
+     task 9) must either be covered by a dimension in `by` or have one value
+     in the selection. Harness is covered by `HARNESS`, `HARNESS_VERSION`
+     or `AGENT`; model by `MODEL`; stack by `STACK`. So `[STACK, MODEL]`
+     needs one harness, and `[HARNESS, MODEL]` needs one stack, as today.
+   - `LANGUAGE` and `FRAMEWORK` cover stack the way `--by language` does
+     today: a row pools that language's (or framework's) stacks, and the
+     comparison is refused when a row mixes declared versions (task 8).
+     Every other cell holds exactly one stack.
+   - The mixed comparability key and mixed suite refusals are unchanged.
+   - CLI: `aicsbench compare --by stack,model` (comma-separated).
+6. `src/ai_benchmark/reporting.py`, `trial_row`: add `harness`,
    `harness_version`, `requested_model`, `reasoning_effort` (see
    [schemas.md](../schemas.md#datatrialsjson)). Existing keys keep their
    names, order and meaning; new keys go at the end.
-6. `src/ai_benchmark/storage/base.py`, `ResultFilter`: add
+7. `src/ai_benchmark/storage/base.py`, `ResultFilter`: add
    `harness_version: str | None = None`, applied in `JsonResultStore`.
-7. CLI: `aicsbench compare --by harness|harness_version|harness_model` works
+8. CLI: `aicsbench compare --by harness|harness_version|harness_model` works
    (it already takes the enum); `aicsbench results` gets
    `--harness-version`. Help texts say "harness (agent CLI)".
-8. Dashboard (`dashboard.py`): add the three dimensions to the "Compare by"
+9. Dashboard (`dashboard.py`): add the three dimensions to the "Compare by"
    select and a "Harness version" filter.
-9. Docs: README command list and `docs/agents.md` mention that the agent
+10. Docs: README command list and `docs/agents.md` mention that the agent
    adapter name is called the harness in reports.
 
 ## Acceptance criteria
@@ -63,6 +81,10 @@ nothing calls it a harness. See [decisions.md](../decisions.md) D8 and the
 - [ ] `aicsbench compare --run R --by harness_version` groups trials of the
       same harness by version, and shows `codex unknown` for a trial with no
       version.
+- [ ] `--by stack,model` over two stacks and two models with one harness
+      gives four rows; the same over two harnesses is refused naming
+      harness; `--by language,model` pools two PHP stacks into one row; and
+      `--by harness_model` gives the same rows as `--by harness,model`.
 - [ ] `aicsbench export --format csv` has the four new columns at the end;
       a stored trial from before this change still exports (missing values
       are empty).
