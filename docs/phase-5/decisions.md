@@ -9,7 +9,7 @@ cannot be done with a default, stop and say so in the PR description.
 | --- | --- | --- | --- |
 | D1 | Where does submitted data live? | A separate public repository, `dyaskur/aicsbench-data`. | Default (pending) |
 | D2 | Hosting and domain | GitHub Pages from the data repository, served at `https://dyaskur.github.io/aicsbench-data/`. The base URL is a setting (`--base-url`), so a custom domain is a config change. | Default (pending) |
-| D3 | Site generator | Python + Jinja2 inside this package (`aicsbench site build`), so the site reuses `comparison.py` and the result models and shows the same numbers as the CLI. | Default (pending) |
+| D3 | Site generator | Python + Jinja2 inside this package (`aicsbench site build`), so the site reuses `comparison.py` and the result models and shows the same numbers as the CLI. A JavaScript generator such as Astro stays an option for later; it would read the same `data/trials.json`, so the bundle format and data repository do not change. | Decided by the maintainer |
 | D4 | Do community runs need logs? | No. Logs are optional for everyone; runs with logs get a "logs available" badge. Default rankings show verified runs only. | Default (pending) |
 | D5 | Data licence | Submitted result data is published under CC BY 4.0; submitting implies agreement (stated in the PR template). Code stays under the repository's licence. | Default (pending) |
 | D6 | Submission path | Pull requests only. No upload API. | Decided by the maintainer |
