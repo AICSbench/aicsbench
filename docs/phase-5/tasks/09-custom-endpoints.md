@@ -62,9 +62,10 @@ compared with direct runs.
    Stored trials without these fields still load, with `provider` set to
    `unknown`: before this task a gateway could be configured through
    `auth.env` without being recorded, so the default cannot be assumed.
-   `unknown` is its own provider value, so the one-provider rule never
-   mixes it with a known provider, and the site labels it "provider not
-   recorded".
+   The site labels it "provider not recorded". Two `unknown` trials may
+   have used different gateways, so harness comparisons refuse `unknown`
+   altogether (item 5). Legacy trials still appear in model and stack
+   comparisons.
 4. **Cost.** When an endpoint is set, `cost_usd` is
    `unavailable` with the note "custom endpoint; harness price table does
    not apply", unless the gateway's own cost is parsed, which is out of scope
@@ -76,6 +77,11 @@ compared with direct runs.
      `"harness comparison mixes providers; filter to one provider"`. A
      Codex run against OpenAI directly is never ranked against a Claude Code
      run through OpenRouter.
+   - That provider must be known. If any selected trial has provider
+     `unknown`, including a selection where every trial is `unknown`, the
+     harness rules refuse with `"harness comparison needs a recorded
+     provider; exclude trials recorded before provider tracking"`. The site's
+     harness pages and the compare page apply the same rule.
    - `--by provider` needs one harness, one model key and one stack.
    - `comparability_key` is unchanged.
 6. **Export and site.** `trial_row` gets `provider` and `endpoint_host` at
@@ -105,6 +111,9 @@ compared with direct runs.
 - [ ] A stored trial without `provider` loads as `unknown`, and
       `--by harness` refuses to mix it with a trial whose provider is
       `openai`.
+- [ ] `--by harness` over trials that are all `unknown` is refused with the
+      recorded-provider message, while `--by stack` over the same trials
+      succeeds.
 - [ ] `submit` writes `custom` for a private gateway host, and
       `validate-submission` rejects an arbitrary host.
 
