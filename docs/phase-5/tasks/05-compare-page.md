@@ -49,6 +49,28 @@ need filtering and grouping on demand, without a server.
    through normal Svelte expressions only; there is no `{@html}`. The state
    lives in the URL query string, so a comparison can be shared and
    reloaded.
+6. **URL format.** `/compare/?<params>`. Values are the raw data values
+   (`gpt-6-luna`, `openai/gpt-6-luna`), URL-encoded, not page slugs. A
+   parameter that takes several values uses commas. Unknown parameters are
+   ignored. When the page writes the URL, it writes parameters in the order
+   below and leaves out defaults.
+
+   | Param | Meaning | Default |
+   | --- | --- | --- |
+   | `task` | task ID (required) | none: the page asks for it |
+   | `v` | task version | newest |
+   | `by` | `harness`, `harness_version`, `model`, `harness_model`, `stack`, `language`, `framework`, `provider` | `harness_model` |
+   | `harness`, `harness_version`, `model`, `stack`, `language`, `framework`, `provider` | filters, comma-separated | all |
+   | `mode`, `auth` | tooling mode, auth mode | all |
+   | `repairs`, `parallel` | repair budget, parallelism | all |
+   | `verified` | `1` verified only, `0` include community | `1` |
+   | `rl` | `1` include rate-limited trials | excluded |
+   | `since` | submitted on or after, `YYYY-MM-DD` | none |
+
+   For example, three harnesses on one model and stack:
+   `/compare/?task=url-shortener-api&by=harness&model=gpt-6-luna&stack=fastapi-latest`.
+   `model` matches `model_key` (task 1), so `gpt-6-luna` also matches
+   OpenCode's `openai/gpt-6-luna`.
 
 ## Acceptance criteria
 
@@ -64,7 +86,9 @@ need filtering and grouping on demand, without a server.
       refusal tests in `aicsbench/aicsbench`, with matching messages.
 - [ ] A Playwright test loads the built site from `pnpm preview`, picks
       "Compare by: harness", and sees one row per harness in the fixture.
-- [ ] Opening a URL with query parameters restores the same selection.
+- [ ] Opening a URL with query parameters restores the same selection;
+      changing a control writes the canonical URL (fixed order, defaults
+      left out), tested with the example URL above.
 - [ ] Refusals show the CLI's message, not numbers. The Playwright test
       checks at least a harness comparison across two stacks and a stack
       comparison across two harness + model pairs.
