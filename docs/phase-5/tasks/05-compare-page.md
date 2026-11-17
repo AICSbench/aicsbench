@@ -41,7 +41,9 @@ need filtering and grouping on demand, without a server.
    Before querying, `src/lib/compare/refusals.ts` applies the same refusals
    as `compare_trials`, with the same messages: a mixed comparability key; a
    stack comparison over several harness + model pairs; a model or harness
-   comparison over several stacks or several model keys; and so on. The page
+   comparison over several stacks or several model keys; a selection that
+   mixes `suite_sha256` values ("comparison mixes acceptance suites; pick
+   one suite", with a `suite` filter listing the hashes); and so on. The page
    shows the message instead of a table and highlights the filter the user
    should set.
 5. Output: the `Leaderboard` and `BarChart` components from task 10, so a
@@ -66,6 +68,7 @@ need filtering and grouping on demand, without a server.
    | `verified` | `1` verified only, `0` include community | `1` |
    | `rl` | `1` include rate-limited trials | excluded |
    | `since` | submitted on or after, `YYYY-MM-DD` | none |
+   | `suite` | `suite_sha256` (full or a unique prefix of at least 8 hex) | the only suite, if there is one |
 
    For example, three harnesses on one model and stack:
    `/compare/?task=url-shortener-api&by=harness&model=gpt-6-luna&stack=fastapi-latest`.
@@ -84,6 +87,8 @@ need filtering and grouping on demand, without a server.
       step.
 - [ ] Vitest covers `refusals.ts` with the same cases as the `compare_trials`
       refusal tests in `aicsbench/aicsbench`, with matching messages.
+- [ ] A fixture export with two `suite_sha256` values for one task version
+      is refused until a `suite` filter selects one.
 - [ ] A Playwright test loads the built site from `pnpm preview`, picks
       "Compare by: harness", and sees one row per harness in the fixture.
 - [ ] Opening a URL with query parameters restores the same selection;

@@ -183,6 +183,7 @@ and these keys added only in the export:
 | --- | --- |
 | `verified` | run ID listed in `verified-runs.txt` |
 | `logs_available` | `submission.json.logs_included` |
+| `suite_sha256` | `submission.json.acceptance_suite_sha256` |
 | `submitted_at` | `submission.json.submitted_at` |
 | `submitter` | `submission.json.submitter.github` or `name` |
 
