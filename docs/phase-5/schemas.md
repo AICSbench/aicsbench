@@ -94,9 +94,10 @@ Two modes:
   the data repository's CI for new bundles. A new bundle must match a task
   version the current catalog ships.
 - **Rebuild** (`check_catalog=False`): used by the site build for bundles
-  already merged. The `task` and `suite` rules are skipped, so results for a
-  task version the catalog no longer ships stay on the site, shown under
-  their own version. Every other rule still runs.
+  already merged. The `task` rule and the catalog part of the `suite` rule
+  are skipped, so results for a task version the catalog no longer ships
+  stay on the site, shown under their own version. The `suite` manifest
+  check and every other rule still run.
 
 | Code | Rule |
 | --- | --- |
@@ -155,12 +156,14 @@ Every path ends in `/` and is written as `<path>/index.html`.
 | `/methodology/` | How trials run, what each metric means, comparability rules, verified vs community |
 | `/sitemap.xml`, `/robots.txt` | All pages above; `robots.txt` allows all and points at the sitemap |
 
-Slugs: lower case, characters outside `[a-z0-9._-]` replaced by `-`. When
-two different values of the same dimension would get the same slug (for
-example `Foo/Bar` and `Foo-Bar`), every value in that colliding set gets
-`-<first 8 hex characters of SHA-256 of the original value>` appended, so
-paths stay distinct and stable across builds. The build asserts no two pages
-share an output path.
+Slugs depend only on the value, never on which other values exist, so a
+page path never changes when new data arrives. The base slug is the value in
+lower case with characters outside `[a-z0-9._-]` replaced by `-`. If the base
+slug equals the original value (for example `gpt-6-luna`), it is the slug.
+Otherwise the slug is the base slug plus
+`-<first 8 hex characters of SHA-256 of the original value>`, so `Foo/Bar`
+and `Foo-Bar` get distinct paths. The build asserts no two pages share an
+output path.
 Every page has a unique `<title>`, a `<meta name="description">`, a
 canonical URL from `--base-url`, Open Graph tags, and JSON-LD
 (`Dataset` on task pages, `WebSite` on `/`). Charts are inline SVG generated

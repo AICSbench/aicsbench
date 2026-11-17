@@ -81,7 +81,9 @@ aicsbench [--tasks-dir DIR] site build --data DIR --out DIR --base-url URL
 - [ ] A fixture bundle whose `submitter.name` and `notes` contain
       `<script>alert(1)</script>` renders escaped on every page, and the
       JSON-LD block contains no raw `</script>`.
-- [ ] Two models whose slugs collide get distinct, stable page paths.
+- [ ] Two models whose base slugs collide (`Foo/Bar`, `Foo-Bar`) get
+      distinct page paths, and adding the second does not change the
+      first's path.
 - [ ] A bundle for a task version the catalog no longer ships still appears,
       under its own version.
 
