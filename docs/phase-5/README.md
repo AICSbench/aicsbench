@@ -56,8 +56,9 @@ on are merged into `main`.
 | 4 | [Static site generator](tasks/04-site-generator.md) | 1 | this repo |
 | 5 | [Compare page in the browser](tasks/05-compare-page.md) | 4 | this repo |
 | 6 | [Data repository template and workflows](tasks/06-data-repo.md) | 2, 4 | this repo, then the data repo |
+| 7 | [Installed language and framework versions](tasks/07-installed-versions.md) | none | this repo |
 
-Tasks 2 and 4 can run in parallel once task 1 is merged.
+Tasks 2 and 4 can run in parallel once task 1 is merged. Task 7 is independent and can run at any time; do it before real submissions start so public runs carry installed versions.
 
 ## How to work on a task
 
@@ -107,3 +108,4 @@ Tasks 2 and 4 can run in parallel once task 1 is merged.
 | 4 Static site generator | not started |
 | 5 Compare page | not started |
 | 6 Data repository | not started |
+| 7 Installed versions | not started |

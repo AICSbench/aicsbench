@@ -118,7 +118,7 @@ Two modes:
 `aicsbench site build` writes `data/trials.json`: a JSON array with one
 object per trial of every accepted submission. Each object is
 `reporting.trial_row(trial)` (the existing export row) plus these keys, all
-added by task 1 to `trial_row` itself so CSV/JSONL exports get them too:
+added by tasks 1 and 7 to `trial_row` itself so CSV/JSONL exports get them too:
 
 | Key | Source |
 | --- | --- |
@@ -126,6 +126,8 @@ added by task 1 to `trial_row` itself so CSV/JSONL exports get them too:
 | `harness_version` | `agent.version` |
 | `requested_model` | `agent.requested_model` |
 | `reasoning_effort` | `agent.reasoning_effort` |
+| `language_version_installed` | `environment.installed_versions["language"]` (task 7; the existing `language_version` key stays the version the stack declares) |
+| `framework_version_installed` | `environment.installed_versions["framework"]` (task 7; the existing `framework_version` key stays the version the stack declares) |
 
 and these keys added only in the site file:
 
