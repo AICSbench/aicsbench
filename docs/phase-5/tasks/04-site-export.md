@@ -57,7 +57,7 @@ aicsbench [--tasks-dir DIR] site export --data DIR --out DIR --base-url URL
      `compare_trials(by=rows)` on that task's trials with the same filters,
      including its refusals. A column that is refused carries the refusal
      message instead of cells. Rows are the union of the columns' groups.
-     The overall columns follow task 5 item 7. `aicsbench compare` gets
+     The overall columns follow task 5 item 6. `aicsbench compare` gets
      `--tasks t1,t2,...` (alias `--matrix`), which prints this table; with
      one task it behaves as today.
    - The `/leaderboard/` page: `compare_matrix` with rows `harness_model`,

@@ -234,7 +234,7 @@ Every path ends in `/` and is written as `<path>/index.html`.
 | `/tasks/<task>/harnesses/<harness>/` | That harness on that task: by model (per stack), by stack (per model), by harness version (per model and stack) |
 | `/tasks/<task>/models/<model>/` | That model: by harness (per stack), by stack (per harness) |
 | `/tasks/<task>/stacks/<stack>/` | That stack: by harness + model |
-| `/leaderboard/` | Cross-task matrix (task 4's `compare_matrix`): rows are harness + model, columns are tasks (newest version each), one section per stack, verified runs only, with the overall columns described in [task 5](tasks/05-compare-page.md) item 7 |
+| `/leaderboard/` | Cross-task matrix (task 4's `compare_matrix`): rows are harness + model, columns are tasks (newest version each), one section per stack, verified runs only, with the overall columns described in [task 5](tasks/05-compare-page.md) item 6 |
 | `/runs/<run_id>/` | Run metadata, every trial row, link to the raw bundle on GitHub |
 | `/compare/` | The interactive compare page (task 5, in `aicsbench/web`); static fallback text explains it needs JavaScript |
 | `/methodology/` | How trials run, what each metric means, comparability rules, verified vs community |
