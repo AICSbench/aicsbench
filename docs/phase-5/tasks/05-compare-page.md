@@ -51,7 +51,37 @@ need filtering and grouping on demand, without a server.
    through normal Svelte expressions only; there is no `{@html}`. The state
    lives in the URL query string, so a comparison can be shared and
    reloaded.
-6. **URL format.** `/compare/?<params>`. Values are the raw data values
+6. **Matrix view.** With `view=matrix`, the rows are the "compare by"
+   groups and the columns are several tasks, for example:
+
+   | | url-shortener-api | todo-api | auth-api | Overall |
+   | --- | --- | --- | --- | --- |
+   | claude + claude-opus-5-5 | 95% · 210 s | 90% · 340 s | 85% · 400 s | 90% · 3/3 |
+   | codex + gpt-6-luna | 100% · 180 s | 80% · 300 s | (no data) | 90% · 2/3 |
+
+   - **Each column is its own comparison.** A column is one task at one
+     version (newest by default, or pinned with `task=<id>@<version>`). Its
+     cells are exactly the single-task comparison with the same `by` and
+     filters, so every refusal still applies per column (one stack for a
+     model comparison, one provider for a harness comparison, one suite, and
+     so on). A refused column shows the message in its header and has no
+     cells. Rows never mix task versions or suites inside one cell.
+   - **Cell:** success rate and mean agent time over passed trials, with the
+     low-confidence mark under 3 trials, linking to the single-task compare
+     URL for that column.
+   - **Overall:** the unweighted mean of the row's per-task success rates
+     (each task counts once, whatever its trial count), shown with coverage
+     ("3/3"). Agent times are not averaged across tasks, because tasks take
+     very different times; instead the overall shows the row's mean rank
+     across its columns (rank 1 = best in that column, by the single-task
+     order). Rows with full coverage are ranked first, by overall success
+     rate, then by mean rank; rows missing a task follow, marked
+     "incomplete", and are never ranked above a complete row. A refused
+     column is left out of every row's overall and of the coverage count.
+   - The query is the same `query.sql`, run once per column. The Overall is
+     computed in `src/lib/compare/matrix.ts`, mirroring
+     `comparison.compare_matrix` (task 4).
+7. **URL format.** `/compare/?<params>`. Values are the raw data values
    (`gpt-6-luna`, `openai/gpt-6-luna`), URL-encoded, not page slugs. A
    parameter that takes several values uses commas. Unknown parameters are
    ignored. When the page writes the URL, it writes parameters in the order
@@ -59,8 +89,9 @@ need filtering and grouping on demand, without a server.
 
    | Param | Meaning | Default |
    | --- | --- | --- |
-   | `task` | task ID (required) | none: the page asks for it |
-   | `v` | task version | newest |
+   | `view` | `matrix` for the matrix view (item 6) | single task |
+   | `task` | task ID (required); in the matrix view several, comma-separated, each optionally `<id>@<version>` | none: the page asks for it |
+   | `v` | task version (single-task view only) | newest |
    | `by` | `harness`, `harness_version`, `model`, `harness_model`, `stack`, `language`, `framework`, `provider` | `harness_model` |
    | `harness`, `harness_version`, `model`, `stack`, `language`, `framework`, `provider` | filters, comma-separated | all |
    | `mode`, `auth` | tooling mode, auth mode | all |
@@ -74,6 +105,12 @@ need filtering and grouping on demand, without a server.
    `/compare/?task=url-shortener-api&by=harness&model=gpt-6-luna&stack=fastapi-latest`.
    `model` matches `model_key` (task 1), so `gpt-6-luna` also matches
    OpenCode's `openai/gpt-6-luna`.
+
+   Matrix examples:
+   - models across three tasks, one harness and stack:
+     `/compare/?view=matrix&task=url-shortener-api,todo-api,auth-api&by=model&harness=claude&stack=fastapi-latest`
+   - harness + model pairs on one stack, one task pinned to a version:
+     `/compare/?view=matrix&task=url-shortener-api@1.0.0,todo-api&stack=laravel13-boost`
 
 ## Acceptance criteria
 
@@ -89,6 +126,11 @@ need filtering and grouping on demand, without a server.
       refusal tests in `aicsbench/aicsbench`, with matching messages.
 - [ ] A fixture export with two `suite_sha256` values for one task version
       is refused until a `suite` filter selects one.
+- [ ] The contract test also runs the matrix view: `query.sql` per column
+      plus `matrix.ts` against `compare_matrix` on the fixture, for two
+      tasks, with identical cells, overall values and row order.
+- [ ] A matrix with one refused column shows the refusal in that column's
+      header and leaves it out of every overall.
 - [ ] A Playwright test loads the built site from `pnpm preview`, picks
       "Compare by: harness", and sees one row per harness in the fixture.
 - [ ] Opening a URL with query parameters restores the same selection;

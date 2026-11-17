@@ -51,6 +51,18 @@ aicsbench [--tasks-dir DIR] site export --data DIR --out DIR --base-url URL
        together. The section heading names the suite hash's first 8
        characters when a task version has more than one.
      - Verified and community runs go in separate sections.
+   - `comparison.compare_matrix(trials, rows, tasks, filters)` (in
+     `src/ai_benchmark/comparison.py`, beside `compare_trials`): one column
+     per `(task, task_version)`, and each column is exactly
+     `compare_trials(by=rows)` on that task's trials with the same filters,
+     including its refusals. A column that is refused carries the refusal
+     message instead of cells. Rows are the union of the columns' groups.
+     The overall columns follow task 5 item 7. `aicsbench compare` gets
+     `--tasks t1,t2,...` (alias `--matrix`), which prints this table; with
+     one task it behaves as today.
+   - The `/leaderboard/` page: `compare_matrix` with rows `harness_model`,
+     every task at its newest version, verified runs only, one section per
+     stack.
    - `models.py`: pydantic models (`extra="forbid"`) for `export.json`, a
      trial row, `meta.json` and `pages.json`. The export is written through
      them, and `schema/*.schema.json` is generated from them.
@@ -77,6 +89,10 @@ aicsbench [--tasks-dir DIR] site export --data DIR --out DIR --base-url URL
       (a pass rate, a harness name, a run ID).
 - [ ] Every leaderboard section's `rows` equal `compare_trials` on the same
       trials (the test compares both).
+- [ ] `compare_matrix` over two tasks equals `compare_trials` per column,
+      a row missing from one task is listed after the complete rows with
+      its overall marked incomplete, and a refused column shows the
+      refusal and is left out of the overall.
 - [ ] An invalid bundle in the data folder is skipped with a warning, and
       the export still succeeds.
 - [ ] Two models whose base slugs collide (`Foo/Bar`, `Foo-Bar`) get
