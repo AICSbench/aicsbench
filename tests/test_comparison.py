@@ -124,6 +124,22 @@ def test_harness_version_refuses_mixed_harness_model_or_stack() -> None:
             compare_trials([base, other], ComparisonDimension.HARNESS_VERSION)
 
 
+def test_harness_version_combined_with_model_groups_versions_per_model() -> None:
+    trials = [
+        _modeled("a", model="m1", version="1"),
+        _modeled("b", model="m1", version="2"),
+        _modeled("c", model="m2", version="1"),
+        _modeled("d", model="m2", version="2"),
+    ]
+    rows = compare_trials(trials, [ComparisonDimension.HARNESS_VERSION, ComparisonDimension.MODEL])
+    assert {row.value for row in rows} == {
+        "codex 1 + m1",
+        "codex 2 + m1",
+        "codex 1 + m2",
+        "codex 2 + m2",
+    }
+
+
 def test_same_model_key_compares_across_harnesses() -> None:
     codex = _modeled("a", agent="codex", model="gpt-6-luna")
     opencode = _modeled("b", agent="opencode", model="openai/gpt-6-luna")

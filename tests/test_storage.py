@@ -131,10 +131,30 @@ def test_harness_version_filter(tmp_path: Path) -> None:
     first.agent.version = "0.167.2"
     second = trial("r1", "t2", "codex", TrialStatus.PASSED)
     second.agent.version = "0.167.1"
+    third = trial("r1", "t3", "codex", TrialStatus.PASSED)
     store.save_trial(first)
     store.save_trial(second)
+    store.save_trial(third)
     matches = list(store.iter_trials(ResultFilter(harness_version="0.167.2")))
     assert [item.trial_id for item in matches] == ["t1"]
+    unknown = list(store.iter_trials(ResultFilter(harness_version="unknown")))
+    assert [item.trial_id for item in unknown] == ["t3"]
+
+
+def test_model_filter_matches_model_key_across_harnesses(tmp_path: Path) -> None:
+    store = JsonResultStore(tmp_path)
+    store.save_manifest(manifest("r1"))
+    codex = trial("r1", "t1", "codex", TrialStatus.PASSED)
+    codex.agent.resolved_model = "gpt-6-luna"
+    opencode = trial("r1", "t2", "opencode", TrialStatus.PASSED)
+    opencode.agent.resolved_model = "openai/gpt-6-luna"
+    store.save_trial(codex)
+    store.save_trial(opencode)
+
+    by_key = list(store.iter_trials(ResultFilter(model="gpt-6-luna")))
+    assert [item.trial_id for item in by_key] == ["t1", "t2"]
+    by_label = list(store.iter_trials(ResultFilter(model="openai/gpt-6-luna")))
+    assert [item.trial_id for item in by_label] == ["t2"]
 
 
 def test_parse_junit(tmp_path: Path) -> None:

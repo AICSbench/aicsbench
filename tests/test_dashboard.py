@@ -59,7 +59,32 @@ def test_dashboard_serves_harness_version_comparison_and_filter(tmp_path: Path) 
     assert status == 200
     assert [row["trial_id"] for row in json.loads(body)] == ["t1"]
 
+    status, _, body = dashboard_response(store, "/api/trials?run=r1&harness_version=unknown")
+    assert status == 200
+    unknown = json.loads(body)
+    assert [row["trial_id"] for row in unknown] == ["t2"]
+    assert unknown[0]["harness_version"] == "unknown"
+
     status, _, body = dashboard_response(store, "/")
     assert status == 200
     assert b'value="harness_version"' in body
     assert b'id="harness_version"' in body
+
+
+def test_dashboard_model_filter_matches_model_key_across_harnesses(tmp_path: Path) -> None:
+    store = JsonResultStore(tmp_path)
+    store.save_manifest(manifest("r1"))
+    codex = trial("r1", "t1", "codex", TrialStatus.PASSED)
+    codex.agent.resolved_model = "gpt-6-luna"
+    opencode = trial("r1", "t2", "opencode", TrialStatus.PASSED)
+    opencode.agent.resolved_model = "openai/gpt-6-luna"
+    store.save_trial(codex)
+    store.save_trial(opencode)
+
+    status, _, body = dashboard_response(store, "/api/compare?run=r1&by=harness&model=gpt-6-luna")
+    assert status == 200
+    assert {group["value"] for group in json.loads(body)["groups"]} == {"codex", "opencode"}
+
+    status, _, body = dashboard_response(store, "/api/trials?run=r1")
+    assert status == 200
+    assert {row["model_key"] for row in json.loads(body)} == {"gpt-6-luna"}

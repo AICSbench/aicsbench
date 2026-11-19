@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -82,7 +81,7 @@ function option(select, value, label) {
 function fillFilter(id) {
   const select = el[id], previous = select.value;
   select.replaceChildren(); option(select, '', 'All');
-  const values = [...new Set(trials.map(row => row[id]).filter(Boolean))].sort();
+  const values = [...new Set(trials.map(row => filterValue(row, id)).filter(Boolean))].sort();
   values.forEach(value => option(select, value, value));
   if (values.includes(previous)) select.value = previous;
 }
@@ -115,13 +114,17 @@ const fixedBy = {
   agent_model: ['stack'], harness_model: ['stack'],
   task: ['agent', 'model', 'stack'],
 };
+const filterValue = (row, id) => id === 'model' ? row.model_key : row[id];
 function alignFilters() {
   const needs = fixedBy[el.by.value] || ['stack'];
+  const candidates = el.harness_version.value
+    ? trials.filter(row => row.harness_version === el.harness_version.value)
+    : trials;
   for (const id of needs) {
     if (el[id].value) continue;
-    const subset = trials.filter(row => needs.every(other =>
-      other === id || !el[other].value || row[other] === el[other].value));
-    const values = [...new Set(subset.map(row => row[id]).filter(Boolean))].sort();
+    const subset = candidates.filter(row => needs.every(other =>
+      other === id || !el[other].value || filterValue(row, other) === el[other].value));
+    const values = [...new Set(subset.map(row => filterValue(row, id)).filter(Boolean))].sort();
     if (id === 'stack') {
       values.sort((a, b) => subset.filter(row => row.stack === b).length -
                             subset.filter(row => row.stack === a).length);
@@ -180,6 +183,7 @@ el.run.addEventListener('change', () => {
 });
 el.by.addEventListener('change', () => {
   ['agent', 'model', 'stack'].forEach(id => { el[id].value = ''; });
+  if (el.by.value === 'harness_version') el.harness_version.value = '';
   alignFilters(); update();
 });
 ids.filter(id => !['run', 'by'].includes(id))
@@ -230,7 +234,14 @@ def dashboard_response(store: JsonResultStore, target: str) -> tuple[int, str, b
             for run in store.list_runs()
         ]
     elif request.path == "/api/trials":
-        data = [trial_row(item) for item in _trials(store, query)]
+        data = [
+            {
+                **trial_row(item),
+                "harness_version": item.agent.version or "unknown",
+                "model_key": item.agent.model_key,
+            }
+            for item in _trials(store, query)
+        ]
     elif request.path == "/api/compare":
         dimension = ComparisonDimension(query.get("by", "stack"))
         groups = compare_trials(_trials(store, query), dimension)
@@ -244,18 +255,18 @@ def _trials(store: JsonResultStore, query: dict[str, str]) -> list[TrialResult]:
     run_id = query.get("run")
     if not run_id:
         raise ValueError("choose a run")
-    trials = list(store.iter_trials(ResultFilter(run_id=run_id)))
-    fields: dict[str, Callable[[TrialResult], str]] = {
-        "agent": lambda item: item.agent.name,
-        "harness_version": lambda item: item.agent.version or "",
-        "model": lambda item: item.agent.model_label,
-        "stack": lambda item: item.environment.stack,
-        "task": lambda item: item.task_id,
-    }
-    for key, get_value in fields.items():
-        if query.get(key):
-            trials = [item for item in trials if get_value(item) == query[key]]
-    return trials
+    return list(
+        store.iter_trials(
+            ResultFilter(
+                run_id=run_id,
+                agent=query.get("agent"),
+                harness_version=query.get("harness_version"),
+                model=query.get("model"),
+                stack=query.get("stack"),
+                task=query.get("task"),
+            )
+        )
+    )
 
 
 def serve_dashboard(results_dir: Path, port: int = 8765) -> None:

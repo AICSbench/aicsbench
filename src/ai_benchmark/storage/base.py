@@ -33,8 +33,7 @@ class ResultFilter(BaseModel):
         checks = (
             (self.run_id, r.run_id),
             (self.agent, r.agent.name),
-            (self.harness_version, r.agent.version),
-            (self.model, r.agent.resolved_model or r.agent.requested_model),
+            (self.harness_version, r.agent.version or "unknown"),
             (self.stack, r.environment.stack),
             (self.language, r.environment.language),
             (self.framework, r.environment.framework),
@@ -44,7 +43,11 @@ class ResultFilter(BaseModel):
             (self.auth_mode, r.agent.auth_mode),
             (self.rate_limited, r.rate_limited),
         )
-        return all(want is None or want == have for want, have in checks)
+        return all(want is None or want == have for want, have in checks) and (
+            self.model is None
+            or self.model == r.agent.model_label
+            or self.model.lower() == r.agent.model_key
+        )
 
 
 class ResultStore(ABC):
