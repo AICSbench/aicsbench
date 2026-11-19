@@ -95,8 +95,8 @@ def _check_values(dimensions: tuple[ComparisonDimension, ...], trials: list[Tria
     harnesses = {trial.agent.name for trial in trials}
     models = {trial.agent.model_key for trial in trials}
     stacks = {trial.environment.stack for trial in trials}
-    if ComparisonDimension.HARNESS_VERSION in dimensions and (
-        len(harnesses) > 1 or (len(dimensions) == 1 and (len(models) > 1 or len(stacks) > 1))
+    if dimensions == (ComparisonDimension.HARNESS_VERSION,) and (
+        len(harnesses) > 1 or len(models) > 1 or len(stacks) > 1
     ):
         raise ValueError(_HARNESS_VERSION_REFUSAL)
     covered = {axis for dimension in dimensions for axis in _COVERAGE[dimension]}

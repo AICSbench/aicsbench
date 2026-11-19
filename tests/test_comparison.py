@@ -140,6 +140,40 @@ def test_harness_version_combined_with_model_groups_versions_per_model() -> None
     }
 
 
+def test_harness_version_combined_with_model_spans_harnesses() -> None:
+    trials = [
+        _modeled("a", agent="codex", model="gpt-6-luna", version="0.167.2"),
+        _modeled("b", agent="codex", model="gpt-6-luna", version="0.167.1"),
+        _modeled("c", agent="opencode", model="openai/gpt-6-luna", version="1.19.5"),
+    ]
+    rows = compare_trials(trials, [ComparisonDimension.HARNESS_VERSION, ComparisonDimension.MODEL])
+    assert {row.value for row in rows} == {
+        "codex 0.167.2 + gpt-6-luna",
+        "codex 0.167.1 + gpt-6-luna",
+        "opencode 1.19.5 + openai/gpt-6-luna",
+    }
+
+
+def test_harness_version_combined_with_stack_spans_harnesses() -> None:
+    trials = [
+        _modeled("a", agent="codex", model="m1", stack="fastapi", version="1"),
+        _modeled("b", agent="opencode", model="openai/m1", stack="laravel", version="2"),
+    ]
+    rows = compare_trials(trials, [ComparisonDimension.HARNESS_VERSION, ComparisonDimension.STACK])
+    assert {row.value for row in rows} == {"codex 1 + fastapi", "opencode 2 + laravel"}
+
+
+def test_harness_version_combined_with_model_refuses_mixed_stacks() -> None:
+    trials = [
+        _modeled("a", model="m1", stack="fastapi", version="1"),
+        _modeled("b", model="m1", stack="laravel", version="2"),
+    ]
+    with pytest.raises(ValueError, match="mixes stacks; filter to one stack"):
+        compare_trials(
+            trials, [ComparisonDimension.HARNESS_VERSION, ComparisonDimension.MODEL]
+        )
+
+
 def test_same_model_key_compares_across_harnesses() -> None:
     codex = _modeled("a", agent="codex", model="gpt-6-luna")
     opencode = _modeled("b", agent="opencode", model="openai/gpt-6-luna")

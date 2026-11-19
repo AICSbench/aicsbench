@@ -56,6 +56,9 @@ nothing calls it a harness. See [decisions.md](../decisions.md) D8 and the
      in the selection. Harness is covered by `HARNESS`, `HARNESS_VERSION`
      or `AGENT`; model by `MODEL`; stack by `STACK`. So `[STACK, MODEL]`
      needs one harness, and `[HARNESS, MODEL]` needs one stack, as today.
+     `HARNESS_VERSION` needs one harness, model and stack only when it is
+     the sole dimension; in a combination its harness axis is covered, so
+     rows may span harnesses.
    - `LANGUAGE` and `FRAMEWORK` cover stack the way `--by language` does
      today: a row pools that language's (or framework's) stacks, and the
      comparison is refused when a row mixes declared versions (task 8).
