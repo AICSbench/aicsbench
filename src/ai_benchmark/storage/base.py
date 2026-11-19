@@ -20,6 +20,7 @@ class ResultFilter(BaseModel):
     agent: str | None = None
     harness_version: str | None = None
     model: str | None = None
+    model_key: str | None = None
     stack: str | None = None
     language: str | None = None
     framework: str | None = None
@@ -34,6 +35,7 @@ class ResultFilter(BaseModel):
             (self.run_id, r.run_id),
             (self.agent, r.agent.name),
             (self.harness_version, r.agent.version or "unknown"),
+            (self.model_key, r.agent.model_key),
             (self.stack, r.environment.stack),
             (self.language, r.environment.language),
             (self.framework, r.environment.framework),

@@ -261,7 +261,7 @@ def _trials(store: JsonResultStore, query: dict[str, str]) -> list[TrialResult]:
                 run_id=run_id,
                 agent=query.get("agent"),
                 harness_version=query.get("harness_version"),
-                model=query.get("model"),
+                model_key=query.get("model"),
                 stack=query.get("stack"),
                 task=query.get("task"),
             )

@@ -88,3 +88,24 @@ def test_dashboard_model_filter_matches_model_key_across_harnesses(tmp_path: Pat
     status, _, body = dashboard_response(store, "/api/trials?run=r1")
     assert status == 200
     assert {row["model_key"] for row in json.loads(body)} == {"gpt-6-luna"}
+
+
+def test_dashboard_model_selector_filters_by_key_only(tmp_path: Path) -> None:
+    store = JsonResultStore(tmp_path)
+    store.save_manifest(manifest("r1"))
+    codex = trial("r1", "t1", "codex", TrialStatus.PASSED)
+    codex.agent.resolved_model = "openai/gpt-6-luna"
+    opencode = trial("r1", "t2", "opencode", TrialStatus.PASSED)
+    opencode.agent.resolved_model = "openai/gpt-6-luna"
+    store.save_trial(codex)
+    store.save_trial(opencode)
+
+    status, _, body = dashboard_response(store, "/api/trials?run=r1&model=openai/gpt-6-luna")
+    assert status == 200
+    assert [row["trial_id"] for row in json.loads(body)] == ["t1"]
+
+    status, _, body = dashboard_response(
+        store, "/api/compare?run=r1&by=harness&model=openai/gpt-6-luna"
+    )
+    assert status == 200
+    assert {group["value"] for group in json.loads(body)["groups"]} == {"codex"}

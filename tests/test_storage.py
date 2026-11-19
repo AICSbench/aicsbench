@@ -157,6 +157,24 @@ def test_model_filter_matches_model_key_across_harnesses(tmp_path: Path) -> None
     assert [item.trial_id for item in by_label] == ["t2"]
 
 
+def test_model_key_filter_is_key_only(tmp_path: Path) -> None:
+    store = JsonResultStore(tmp_path)
+    store.save_manifest(manifest("r1"))
+    codex = trial("r1", "t1", "codex", TrialStatus.PASSED)
+    codex.agent.resolved_model = "openai/gpt-6-luna"
+    opencode = trial("r1", "t2", "opencode", TrialStatus.PASSED)
+    opencode.agent.resolved_model = "openai/gpt-6-luna"
+    store.save_trial(codex)
+    store.save_trial(opencode)
+
+    assert codex.agent.model_key == "openai/gpt-6-luna"
+    assert opencode.agent.model_key == "gpt-6-luna"
+    keyed = list(store.iter_trials(ResultFilter(model_key="openai/gpt-6-luna")))
+    assert [item.trial_id for item in keyed] == ["t1"]
+    labels = list(store.iter_trials(ResultFilter(model="openai/gpt-6-luna")))
+    assert [item.trial_id for item in labels] == ["t1", "t2"]
+
+
 def test_parse_junit(tmp_path: Path) -> None:
     from ai_benchmark.orchestrator.junit import parse_junit
 
