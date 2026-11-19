@@ -502,6 +502,14 @@ Phase 4:
 
 * Additional agents and benchmark tasks.
 
+Phase 5:
+
+* Public results: submissions as pull requests to `aicsbench/data`, an
+  export computed here (`aicsbench site export`), and a static,
+  search-engine-friendly site with in-browser comparisons by harness, model
+  and stack, rendered by `aicsbench/web`. Plan and implementation tasks:
+  docs/phase-5/README.md.
+
 Start by inspecting the environment and proposing the architecture and implementation plan. Then implement the project incrementally.
 
 Do not stop after writing a design document. Build a working MVP, execute its tests, fix implementation problems, and document what works and what remains incomplete.

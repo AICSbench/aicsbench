@@ -1,0 +1,77 @@
+# Phase 5 manual setup (maintainer only)
+
+A coding agent cannot create organizations, transfer repositories, install
+apps or create tokens. The maintainer does these steps by hand, in this
+order. Each step names the task that needs it.
+
+## 1. Organization and repositories (before tasks 6 and 10)
+
+1. Create the GitHub organization `aicsbench`.
+2. Transfer `dyaskur/ai-coding-stack-bench` to it and rename it to
+   `aicsbench`: Settings → General → Transfer, then Rename. GitHub redirects
+   the old URLs. Update local clones with
+   `git remote set-url origin https://github.com/aicsbench/aicsbench.git`,
+   on the VPS too.
+3. Create two empty public repositories, `aicsbench/data` and
+   `aicsbench/web`. Add a README so `main` exists.
+4. Install the CodeRabbit app on the organization, covering all
+   repositories, so all three get reviews.
+5. Give coding agents access to the new repositories. For Claude, install
+   the Claude GitHub App on the organization.
+
+## 2. `aicsbench/web` (before task 10 deploys)
+
+1. Settings → Pages → Source: **GitHub Actions**.
+2. Optional: a custom domain later only changes the data repository's
+   `BASE_URL` variable, `BASE_PATH` in `aicsbench/web`'s `deploy.yml`
+   (`/web` today, empty on a custom domain) and the Pages setting
+   (decision D2).
+
+## 3. `aicsbench/data` (before task 6 is merged)
+
+1. Create the dispatch token. Use a fine-grained personal access token
+   owned by the organization (or a GitHub App), with access to the
+   repository `aicsbench/web` only and the permission **Contents: Read and
+   write**, which `repository_dispatch` requires. Give it an expiry and a
+   calendar reminder to renew it.
+2. Add it to `aicsbench/data` under Settings → Secrets and variables →
+   Actions as the secret `WEB_DISPATCH_TOKEN`.
+3. Add the repository variable `BASE_URL` = `https://aicsbench.github.io/web/`.
+4. Allow `pull_request_target` for `guard.yml`. GitHub restricts that event
+   on public repositories by default; the setting is an event policy under
+   Settings → Actions → Policies (see GitHub's "Control workflow execution"
+   docs). Create or update a policy for `aicsbench/data` that explicitly
+   allows `pull_request_target` for `.github/workflows/guard.yml`, and check
+   that the organization's Actions policies do not block it. Without it the
+   required `guard` check never runs and no PR can merge.
+5. Protect `main` with two rulesets (Settings → Rulesets). A bypass actor
+   skips every rule in its ruleset, so the checks and the review live in
+   separate rulesets. Do this **after** task 6's bootstrap PR is merged:
+   `guard.yml` runs from the base branch, so it cannot report on the PR
+   that adds it. Merge that one PR with the maintainer's review and a green
+   `validate`, then create:
+   - **`main-checks`**, with no bypass actors: require the `validate` and
+     `guard` status checks, and disallow force pushes and deletions. Nobody
+     can merge past these, including the maintainer.
+   - **`main-review`**: require one approving review, with **Require review
+     from Code Owners** on (without it, `CODEOWNERS` only requests a review
+     and does not enforce one).
+   - While `dyaskur` is the only maintainer, GitHub does not let an author
+     approve their own PR, so a maintainer's own change to
+     `verified-runs.txt` can never get a Code Owner approval. Give
+     `main-review` (only) a bypass in **pull requests only** mode. Bypass
+     actors are roles, teams or apps, so use a `maintainers` team in the
+     organization containing `dyaskur` (or the Repository admin role). The
+     checks in `main-checks` still apply to those merges. Remove the bypass
+     once a second maintainer is in `maintainers.txt` and `CODEOWNERS`.
+6. Protect `export`: only GitHub Actions may push (a ruleset that restricts
+   updates, with the Actions integration as the only bypass), and no force
+   pushes.
+
+## 4. First data (after tasks 3, 4 and 6)
+
+1. On the benchmark server, submit the existing verified run
+   (`docs/luna-latest-20-trials.md`) with `aicsbench submit`.
+2. Add its run ID to `verified-runs.txt` in the same PR or a follow-up one.
+3. After the merge, check that `publish.yml` ran, the `export` branch
+   updated, and `aicsbench/web`'s deploy ran and the site shows the run.

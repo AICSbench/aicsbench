@@ -116,3 +116,6 @@ BENCHMARK_DOCKER_TESTS=1 pytest tests/integration   # one real trial in Docker
 ```
 
 How a trial runs, step by step: [docs/trial-execution.md](docs/trial-execution.md).
+
+Phase 5 (public results site and submissions) is planned task by task in
+[docs/phase-5/](docs/phase-5/README.md).
