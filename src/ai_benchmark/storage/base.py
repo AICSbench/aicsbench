@@ -18,6 +18,7 @@ class ResultFilter(BaseModel):
 
     run_id: str | None = None
     agent: str | None = None
+    harness_version: str | None = None
     model: str | None = None
     stack: str | None = None
     language: str | None = None
@@ -32,6 +33,7 @@ class ResultFilter(BaseModel):
         checks = (
             (self.run_id, r.run_id),
             (self.agent, r.agent.name),
+            (self.harness_version, r.agent.version),
             (self.model, r.agent.resolved_model or r.agent.requested_model),
             (self.stack, r.environment.stack),
             (self.language, r.environment.language),

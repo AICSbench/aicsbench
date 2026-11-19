@@ -92,10 +92,26 @@ def test_resolved_model_and_dimensions() -> None:
     assert t.dimension_value(ComparisonDimension.MODEL) == "claude-default"
     t.agent.resolved_model = "m1"
     assert t.dimension_value(ComparisonDimension.AGENT_MODEL) == "claude:m1"
+    assert t.dimension_value(ComparisonDimension.HARNESS) == "claude"
+    assert t.dimension_value(ComparisonDimension.HARNESS_MODEL) == "claude:m1"
+    t.agent.version = "2.1.323"
+    assert t.dimension_value(ComparisonDimension.HARNESS_VERSION) == "claude 2.1.323"
+    t.agent.version = None
+    assert t.dimension_value(ComparisonDimension.HARNESS_VERSION) == "claude unknown"
     assert t.dimension_value(ComparisonDimension.STACK) == "fastapi"
     assert t.dimension_value(ComparisonDimension.LANGUAGE) == "python"
     assert t.comparability_key() == ("task", "1", "standard", "subscription", 0, 1)
     assert all(t.dimension_value(d) for d in ComparisonDimension)
+
+
+def test_model_key_strips_provider_only_for_provider_model_harnesses() -> None:
+    def record(name: str, model: str) -> AgentRecord:
+        return AgentRecord(name=name, resolved_model=model, auth_mode=AuthMode.SUBSCRIPTION)
+
+    assert record("codex", "openai/gpt-6-luna").model_key == "openai/gpt-6-luna"
+    assert record("opencode", "openai/gpt-6-luna").model_key == "gpt-6-luna"
+    assert record("opencode", "openrouter/openai/gpt-6-luna").model_key == "openai/gpt-6-luna"
+    assert record("claude", "Claude-Opus-5-5").model_key == "claude-opus-5-5"
 
 
 def test_model_filter_uses_resolved_model(tmp_path: Path) -> None:
@@ -106,6 +122,19 @@ def test_model_filter_uses_resolved_model(tmp_path: Path) -> None:
     t.agent.resolved_model = "full-model-id"
     store.save_trial(t)
     assert len(list(store.iter_trials(ResultFilter(model="full-model-id")))) == 1
+
+
+def test_harness_version_filter(tmp_path: Path) -> None:
+    store = JsonResultStore(tmp_path)
+    store.save_manifest(manifest("r1"))
+    first = trial("r1", "t1", "codex", TrialStatus.PASSED)
+    first.agent.version = "0.167.2"
+    second = trial("r1", "t2", "codex", TrialStatus.PASSED)
+    second.agent.version = "0.167.1"
+    store.save_trial(first)
+    store.save_trial(second)
+    matches = list(store.iter_trials(ResultFilter(harness_version="0.167.2")))
+    assert [item.trial_id for item in matches] == ["t1"]
 
 
 def test_parse_junit(tmp_path: Path) -> None:

@@ -38,17 +38,21 @@ PAGE = """<!doctype html>
   @media (max-width: 700px) { table { font-size: .85rem; } th, td { padding: .4rem; } }
 </style>
 <h1>AICSBench results</h1>
-<p>Compare passing agent times across stacks or models. Success includes every trial;
+<p>Compare passing agent times across harnesses, stacks or models. Success includes every trial;
   timing excludes rate-limited and failed trials.</p>
 <div class="controls">
   <label>Run <select id="run"></select></label>
   <label>Compare by <select id="by">
     <option value="stack">Stack</option><option value="language">Language</option>
-    <option value="framework">Framework</option><option value="agent_model">Agent + model</option>
+    <option value="framework">Framework</option><option value="harness">Harness</option>
+    <option value="harness_version">Harness version</option>
+    <option value="harness_model">Harness + model</option>
+    <option value="agent_model">Agent + model</option>
     <option value="agent">Agent</option><option value="model">Model</option>
     <option value="task">Task</option>
   </select></label>
   <label>Agent <select id="agent"></select></label>
+  <label>Harness version <select id="harness_version"></select></label>
   <label>Model <select id="model"></select></label>
   <label>Stack <select id="stack"></select></label>
   <label>Task <select id="task"></select></label>
@@ -58,7 +62,7 @@ PAGE = """<!doctype html>
   <th>Mean agent time</th><th>Std dev</th><th>Mean cost</th><th>Confidence</th>
 </tr></thead><tbody id="rows"></tbody></table>
 <script>
-const ids = ['run', 'by', 'agent', 'model', 'stack', 'task'];
+const ids = ['run', 'by', 'agent', 'harness_version', 'model', 'stack', 'task'];
 const el = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
 const message = document.getElementById('message');
 const rows = document.getElementById('rows');
@@ -92,32 +96,37 @@ async function loadTrials() {
       : [];
     if (current !== trialGeneration) return;  // a newer run selection took over
     trials = loaded;
-    ['agent', 'model', 'stack', 'task'].forEach(fillFilter);
+    ['agent', 'harness_version', 'model', 'stack', 'task'].forEach(fillFilter);
     alignFilters();
   } catch (error) {
     if (current !== trialGeneration) return;
     trials = [];  // never show the previous run's rows under a new selection
-    ['agent', 'model', 'stack', 'task'].forEach(fillFilter);
+    ['agent', 'harness_version', 'model', 'stack', 'task'].forEach(fillFilter);
     message.textContent = error.message; message.className = 'error';
     return;
   }
   await update();
 }
+const fixedBy = {
+  stack: ['agent', 'model'], language: ['agent', 'model'], framework: ['agent', 'model'],
+  agent: ['model', 'stack'], harness: ['model', 'stack'],
+  harness_version: ['agent', 'model', 'stack'],
+  model: ['agent', 'stack'],
+  agent_model: ['stack'], harness_model: ['stack'],
+  task: ['agent', 'model', 'stack'],
+};
 function alignFilters() {
-  const values = (id, subset = trials) =>
-    [...new Set(subset.map(row => row[id]).filter(Boolean))].sort();
-  const choose = (id, list) => { if (!el[id].value && list.length > 1) el[id].value = list[0]; };
-  if (['stack', 'language', 'framework'].includes(el.by.value)) {
-    choose('agent', values('agent'));
-    choose('model', values('model', trials.filter(row =>
-      !el.agent.value || row.agent === el.agent.value)));
-  } else {
-    const stacks = values('stack');
-    const byCount = stacks.sort((a, b) =>
-      trials.filter(row => row.stack === b).length - trials.filter(row => row.stack === a).length);
-    choose('stack', byCount);
-    if (el.by.value === 'model') choose('agent', values('agent'));
-    if (el.by.value === 'agent') choose('model', values('model'));
+  const needs = fixedBy[el.by.value] || ['stack'];
+  for (const id of needs) {
+    if (el[id].value) continue;
+    const subset = trials.filter(row => needs.every(other =>
+      other === id || !el[other].value || row[other] === el[other].value));
+    const values = [...new Set(subset.map(row => row[id]).filter(Boolean))].sort();
+    if (id === 'stack') {
+      values.sort((a, b) => subset.filter(row => row.stack === b).length -
+                            subset.filter(row => row.stack === a).length);
+    }
+    if (values.length > 1) el[id].value = values[0];
   }
 }
 function cell(row, value) {
@@ -128,7 +137,7 @@ async function update() {
   rows.replaceChildren(); message.textContent = ''; message.className = '';
   if (!el.run.value) { message.textContent = 'No runs found.'; return; }
   const query = new URLSearchParams({run: el.run.value, by: el.by.value});
-  for (const id of ['agent', 'model', 'stack', 'task']) {
+  for (const id of ['agent', 'harness_version', 'model', 'stack', 'task']) {
     if (el[id].value) query.set(id, el[id].value);
   }
   try {
@@ -238,6 +247,7 @@ def _trials(store: JsonResultStore, query: dict[str, str]) -> list[TrialResult]:
     trials = list(store.iter_trials(ResultFilter(run_id=run_id)))
     fields: dict[str, Callable[[TrialResult], str]] = {
         "agent": lambda item: item.agent.name,
+        "harness_version": lambda item: item.agent.version or "",
         "model": lambda item: item.agent.model_label,
         "stack": lambda item: item.environment.stack,
         "task": lambda item: item.task_id,

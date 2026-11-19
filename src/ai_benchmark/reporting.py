@@ -52,6 +52,10 @@ def trial_row(trial: TrialResult) -> dict[str, str | int | float | bool | None]:
         "total_tokens": tokens.total_tokens.value,
         "cost_usd": usage.cost.value,
         "cost_availability": usage.cost.availability.value,
+        "harness": trial.agent.name,
+        "harness_version": trial.agent.version,
+        "requested_model": trial.agent.requested_model,
+        "reasoning_effort": trial.agent.reasoning_effort,
     }
 
 

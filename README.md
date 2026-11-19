@@ -35,13 +35,19 @@ aicsbench validate [FILES...]        # validate task/stack/experiment files
 aicsbench run --agents codex,claude:<model> --task task-management-api \
               --stacks fastapi,laravel --trials 5 --auth subscription --dry-run
 aicsbench run --config examples/experiment.yaml --dry-run
-aicsbench results [--agent X --stack Y --mode standard --not-rate-limited ...]
+aicsbench results [--harness-version 0.167.2 --stack Y --mode standard --not-rate-limited ...]
 aicsbench compare --run RUN_ID --by stack [--agent codex --model gpt-6-luna]
+aicsbench compare --run RUN_ID --by stack,model
+aicsbench compare --run RUN_ID --by harness_version
 aicsbench export --run RUN_ID --format csv > trials.csv
 aicsbench export --run RUN_ID --format jsonl > trials.jsonl
 aicsbench report --run RUN_ID --by stack > report.md
 aicsbench dashboard --port 8765
 ```
+
+In results, the agent CLI is called the **harness** (`claude`, `codex`,
+`opencode`); `--by harness_version` compares the versions it reported, and
+`--by` takes up to three comma-separated dimensions.
 
 Use `--repairs N` to let a failed acceptance suite trigger up to N more agent
 attempts in the same workspace (default 0, maximum 5). Use `--parallel N` to
