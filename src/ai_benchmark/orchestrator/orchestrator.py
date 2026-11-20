@@ -27,7 +27,7 @@ from ai_benchmark import __version__
 from ai_benchmark.agents.base import AgentAdapter, AgentAvailability, AgentRunResult, AgentTask
 from ai_benchmark.agents.registry import AgentRegistry
 from ai_benchmark.config.auth import AgentAuthConfig
-from ai_benchmark.config.experiment import AgentSelection, ExperimentConfig
+from ai_benchmark.config.experiment import AgentSelection, EndpointConfig, ExperimentConfig
 from ai_benchmark.config.loader import SpecCatalog
 from ai_benchmark.config.settings import PlatformSettings
 from ai_benchmark.config.stack import StackSpec
@@ -147,7 +147,7 @@ class BenchmarkOrchestrator:
                 if mode not in adapter.capabilities().supported_auth_modes:
                     issues.append(error(f"does not support auth mode '{mode.value}'"))
                     continue
-                auth = auth or adapter.default_auth(mode)
+                auth = self.resolve_auth(selection, mode)
             if auth is not None:
                 issues.extend(error(problem) for problem in auth.missing())
         defaults = sorted(k for k, s in selections.items() if s.model is None)
@@ -172,10 +172,22 @@ class BenchmarkOrchestrator:
         return issues
 
     def resolve_auth(self, selection: AgentSelection, mode: AuthMode) -> AgentAuthConfig:
-        """The selection's explicit auth, else the adapter's default for ``mode``."""
+        """The selection's explicit auth, else the adapter's default for ``mode``.
+
+        A custom endpoint's gateway credential is added on top: it replaces the
+        adapter's provider default (Claude Code must not receive
+        ``ANTHROPIC_API_KEY`` next to a gateway token) and is merged with an
+        explicit auth when the user gave one.
+        """
+        adapter = self.registry.create(selection.agent, selection.options)
+        if selection.endpoint is not None:
+            auth = adapter.endpoint_auth(selection.endpoint)
+            if selection.auth is not None:
+                auth = selection.auth.merged_with(auth)
+            return _drop_shadowed_api_key(adapter, selection.endpoint, auth)
         if selection.auth is not None:
             return selection.auth
-        return self.registry.create(selection.agent, selection.options).default_auth(mode)
+        return adapter.default_auth(mode)
 
     def check_agent(self, adapter: AgentAdapter, runner: CommandRunner) -> AgentAvailability:
         """Run the adapter's availability check inside its agent image."""
@@ -324,6 +336,14 @@ class BenchmarkOrchestrator:
                 requested_model=trial.agent.model,
                 reasoning_effort=trial.agent.reasoning_effort,
                 auth_mode=plan.auth_mode,
+                provider=(
+                    trial.agent.endpoint.provider
+                    if trial.agent.endpoint is not None
+                    else AgentRecord.default_provider(trial.agent.agent, trial.agent.model)
+                ),
+                endpoint_host=(
+                    trial.agent.endpoint.host if trial.agent.endpoint is not None else None
+                ),
                 resolved_model=trial.agent.model,
             ),
             environment=EnvironmentRecord(
@@ -417,6 +437,7 @@ class BenchmarkOrchestrator:
                     model=trial.agent.model,
                     reasoning_effort=trial.agent.reasoning_effort,
                     tooling=config.tooling,
+                    endpoint=trial.agent.endpoint,
                     options=trial.agent.options,
                 )
                 _phase(
@@ -489,7 +510,11 @@ class BenchmarkOrchestrator:
         result.metrics.performance.total_wall_clock_seconds = Metric[float].of(
             wall.stop(), MetricSource.MEASURED, unit="s"
         )
-        result.metrics = apply_auth_policy(result.metrics, plan.auth_mode)
+        result.metrics = apply_auth_policy(
+            result.metrics,
+            plan.auth_mode,
+            custom_endpoint=trial.agent.endpoint is not None,
+        )
         _phase(
             trial.trial_id,
             f"{result.status.value} in "
@@ -760,6 +785,25 @@ def _sum_float(metrics: list[Metric[float]]) -> Metric[float]:
         unit=metrics[0].unit,
         note="sum across agent attempts",
     )
+
+
+def _drop_shadowed_api_key(
+    adapter: AgentAdapter, endpoint: EndpointConfig, auth: AgentAuthConfig
+) -> AgentAuthConfig:
+    """The endpoint's credentials with the adapter's provider API-key variable removed.
+
+    Some CLIs prefer their provider's own key variable over the gateway
+    credential (Claude Code checks ``ANTHROPIC_API_KEY`` before the gateway's
+    ``ANTHROPIC_AUTH_TOKEN``), so an explicit ``auth.env`` entry for it would
+    bypass the gateway. The endpoint's own variable (``endpoint.api_key_env``)
+    is never dropped.
+    """
+    shadowed = set(adapter.default_auth(AuthMode.API_KEY).env) - {endpoint.api_key_env}
+    env = [name for name in auth.env if name not in shadowed]
+    env_from = {c: h for c, h in auth.env_from.items() if c not in shadowed}
+    if env == auth.env and env_from == auth.env_from:
+        return auth
+    return AgentAuthConfig(mode=auth.mode, env=env, env_from=env_from, files=auth.files)
 
 
 def _final_status(

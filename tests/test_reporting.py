@@ -35,13 +35,15 @@ def test_flat_export_keeps_unavailable_metrics_null() -> None:
     assert row["input_tokens"] is None
     assert (row["harness"], row["harness_version"]) == ("codex", "0.167.2")
     assert (row["requested_model"], row["reasoning_effort"]) == ("gpt-6-luna", "high")
-    assert list(row)[-6:] == [
+    assert list(row)[-8:] == [
         "harness",
         "harness_version",
         "requested_model",
         "reasoning_effort",
         "language_version_installed",
         "framework_version_installed",
+        "provider",
+        "endpoint_host",
     ]
     csv_row = next(csv.DictReader(io.StringIO(export_trials([item], "csv"))))
     assert csv_row["agent_seconds"] == "7.5" and csv_row["cost_usd"] == ""
@@ -73,7 +75,12 @@ def test_export_adds_installed_version_columns() -> None:
     row = json.loads(export_trials([item], "jsonl"))
     assert row["language_version_installed"] == "3.12.7"
     assert row["framework_version_installed"] == "0.115.2"
-    assert list(row)[-2:] == ["language_version_installed", "framework_version_installed"]
+    assert list(row)[-4:] == [
+        "language_version_installed",
+        "framework_version_installed",
+        "provider",
+        "endpoint_host",
+    ]
 
 
 def test_export_reads_trials_saved_before_installed_versions(tmp_path: Path) -> None:

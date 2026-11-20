@@ -108,6 +108,14 @@ class CliAgentAdapter(AgentAdapter):
         """Lines of stderr worth checking for limit messages. Default: the last 20."""
         return [line for line in stderr.splitlines()[-20:] if line.strip()]
 
+    def endpoint_env(self, task: AgentTask) -> dict[str, str]:
+        """Non-secret env vars that point the CLI at a custom endpoint. Default: none.
+
+        Values only ever come from the task's config (a base URL is not a secret);
+        the API key travels separately, by variable name (:meth:`AgentAdapter.endpoint_auth`).
+        """
+        return {}
+
     # -- AgentAdapter ---------------------------------------------------------
 
     def get_version(self, runner: CommandRunner) -> str | None:
@@ -135,11 +143,12 @@ class CliAgentAdapter(AgentAdapter):
         stdout_path = task.log_dir / "agent.stdout.log"
         stderr_path = task.log_dir / "agent.stderr.log"
         command = self.build_command(task)
+        env = {**task.env, **self.endpoint_env(task)}
         started = datetime.now(timezone.utc)
         res = runner.run(
             command,
             timeout_seconds=task.timeout_seconds,
-            env=task.env or None,
+            env=env or None,
             workdir=task.workdir,
             stdout_path=stdout_path,
             stderr_path=stderr_path,

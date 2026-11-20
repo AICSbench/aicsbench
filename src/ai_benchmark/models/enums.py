@@ -71,6 +71,8 @@ class ComparisonDimension(str, Enum):
     """The agent CLI and the version it reported."""
     HARNESS_MODEL = "harness_model"
     """Harness + resolved model; the same grouping as ``[HARNESS, MODEL]``."""
+    PROVIDER = "provider"
+    """The model provider or gateway the harness ran against (task 9)."""
     STACK = "stack"
     LANGUAGE = "language"
     FRAMEWORK = "framework"

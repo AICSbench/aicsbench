@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -15,6 +16,20 @@ def test_auth_lists_names_not_secret_values() -> None:
     assert AgentAuthConfig(env=["CLAUDE_CODE_OAUTH_TOKEN"]).mode is AuthMode.SUBSCRIPTION
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"env": [""]},
+        {"env": ["TOKEN_A", ""]},
+        {"env_from": {"": "HOST_VAR"}},
+        {"env_from": {"CONTAINER_VAR": ""}},
+    ],
+)
+def test_auth_rejects_empty_variable_names(kwargs: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError, match="environment variable name"):
+        AgentAuthConfig(**kwargs)
+
+
 def test_auth_requires_some_credential() -> None:
     with pytest.raises(ValidationError):
         AgentAuthConfig()
@@ -23,6 +38,23 @@ def test_auth_requires_some_credential() -> None:
 def test_credential_target_must_be_absolute() -> None:
     with pytest.raises(ValidationError):
         CredentialFile(source=Path("~/.codex/auth.json"), target=".codex/auth.json")
+
+
+def test_merged_with_gives_the_endpoint_side_precedence_across_collections() -> None:
+    # The endpoint supplies one variable by passing it through and another by
+    # renaming it; the explicit selection must not keep either name beside the
+    # endpoint's credentials in any collection, in either direction.
+    endpoint = AgentAuthConfig(
+        mode=AuthMode.API_KEY, env=["GW_TOKEN"], env_from={"ANTHROPIC_AUTH_TOKEN": "GATEWAY_KEY"}
+    )
+    explicit = AgentAuthConfig(
+        mode=AuthMode.API_KEY,
+        env=["ANTHROPIC_AUTH_TOKEN"],
+        env_from={"GW_TOKEN": "HOST_VAR"},
+    )
+    merged = explicit.merged_with(endpoint)
+    assert merged.env == ["GW_TOKEN"]
+    assert merged.env_from == {"ANTHROPIC_AUTH_TOKEN": "GATEWAY_KEY"}
 
 
 def test_missing_reports_names_only(tmp_path: Path) -> None:

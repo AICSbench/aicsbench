@@ -52,29 +52,85 @@ class AgentAuthConfig(StrictModel):
         default_factory=list,
         description="Names of host environment variables passed into the container.",
     )
+    env_from: dict[str, str] = Field(
+        default_factory=dict,
+        description="Container variable <- host variable, for when the names differ "
+        "(e.g. a gateway key under ANTHROPIC_AUTH_TOKEN). Values are read from the host "
+        "environment at container-create time and never recorded.",
+    )
     files: list[CredentialFile] = Field(default_factory=list)
 
     @field_validator("env")
     @classmethod
     def _names_not_values(cls, v: list[str]) -> list[str]:
         for name in v:
-            if not name.replace("_", "").isalnum() or not name[0].isalpha():
+            if not name or not name.replace("_", "").isalnum() or not name[0].isalpha():
                 raise ValueError(
                     f"'{name}' is not an environment variable name. "
                     "Put the secret in the host environment and list only its name."
                 )
         return v
 
+    @field_validator("env_from")
+    @classmethod
+    def _renames_not_values(cls, v: dict[str, str]) -> dict[str, str]:
+        for container, host in v.items():
+            for name in (container, host):
+                if not name or not name.replace("_", "").isalnum() or not name[0].isalpha():
+                    raise ValueError(
+                        f"'{name}' is not an environment variable name. "
+                        "Map container variable names to host variable names; never a value."
+                    )
+        return v
+
     @model_validator(mode="after")
     def _has_credentials(self) -> AgentAuthConfig:
-        if not self.env and not self.files:
+        if not self.env and not self.files and not self.env_from:
             raise ValueError("auth needs at least one environment variable or credential file")
+        overlap = sorted(set(self.env) & set(self.env_from))
+        if overlap:
+            raise ValueError(
+                f"{', '.join(overlap)} is both a passed-through and a renamed variable"
+            )
         return self
+
+    def merged_with(self, other: AgentAuthConfig) -> AgentAuthConfig:
+        """The union of two configs' credentials, with the endpoint's (``other``) winning.
+
+        A name the endpoint supplies - by passing through or by renaming - must
+        not survive as an explicit credential beside it, or the harness would
+        receive two credentials for one variable and preflight would fail.
+        """
+        covered = set(other.env) | set(other.env_from)
+        env = [
+            name
+            for name in [*self.env, *(name for name in other.env if name not in self.env)]
+            if name not in set(other.env_from)
+        ]
+        env_from = {
+            **{
+                container: host
+                for container, host in self.env_from.items()
+                if container not in covered
+            },
+            **other.env_from,
+        }
+        return AgentAuthConfig(
+            mode=self.mode,
+            env=env,
+            env_from=env_from,
+            files=[*self.files, *(file for file in other.files if file not in self.files)],
+        )
 
     def missing(self, environ: dict[str, str] | None = None) -> list[str]:
         """Credentials that are absent on this host (names/paths only, never values)."""
         environ = dict(os.environ) if environ is None else environ
         problems = [f"environment variable {n} is not set" for n in self.env if not environ.get(n)]
+        problems += [
+            f"environment variable {host} (for container variable {container}) is not set"
+            for container, host in self.env_from.items()
+            if not environ.get(host)
+        ]
         problems += [
             f"credential file {f.host_path} does not exist"
             for f in self.files
