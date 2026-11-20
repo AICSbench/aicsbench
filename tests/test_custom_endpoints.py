@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 from typer.testing import CliRunner
@@ -13,12 +14,13 @@ from typer.testing import CliRunner
 from ai_benchmark.agents import AgentRegistry, AgentTask
 from ai_benchmark.agents.claude_code import ClaudeCodeAdapter
 from ai_benchmark.agents.codex import CodexAdapter
-from ai_benchmark.agents.opencode import OpenCodeAdapter
+from ai_benchmark.agents.opencode import OPENCODE_CONFIG_PATH, OpenCodeAdapter
 from ai_benchmark.cli.app import app
 from ai_benchmark.comparison import compare_trials
 from ai_benchmark.config import AgentSelection, EndpointConfig, ExperimentConfig, SpecCatalog
 from ai_benchmark.config.settings import PlatformSettings
 from ai_benchmark.environment import CommandResult
+from ai_benchmark.errors import AgentExecutionError, ConfigurationError
 from ai_benchmark.models import (
     AgentRecord,
     AuthMode,
@@ -134,6 +136,48 @@ def test_endpoint_rejects_http_to_a_public_host() -> None:
         )
 
 
+@pytest.mark.parametrize("base_url", ["https:///v1", "https://:8443/v1", "http:///v1"])
+def test_endpoint_requires_a_host_name(base_url: str) -> None:
+    with pytest.raises(ValueError, match="host name"):
+        EndpointConfig(provider="openrouter", base_url=base_url, api_key_env=KEY_ENV)
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    ["https://openrouter.ai:99999/api/v1", "https://openrouter.ai:notaport/api/v1"],
+)
+def test_endpoint_rejects_an_invalid_port(base_url: str) -> None:
+    with pytest.raises(ValueError, match="invalid port"):
+        EndpointConfig(provider="openrouter", base_url=base_url, api_key_env=KEY_ENV)
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://16909060",  # the integer form of 1.2.3.4: a public IP, dotless
+        "http://[2001:4860:4860::8888]/v1",  # a public IPv6 literal
+    ],
+)
+def test_endpoint_rejects_plain_http_to_a_public_ip_literal(base_url: str) -> None:
+    with pytest.raises(ValueError, match="plain http"):
+        EndpointConfig(provider="openrouter", base_url=base_url, api_key_env=KEY_ENV)
+
+
+def test_endpoint_rejects_an_unbracketed_ipv6_url() -> None:
+    # urlsplit cannot tell host from port here, so it is rejected as a port.
+    with pytest.raises(ValueError, match="invalid port"):
+        EndpointConfig(
+            provider="openrouter", base_url="http://2001:4860:4860::8888", api_key_env=KEY_ENV
+        )
+
+
+def test_endpoint_rejects_an_empty_api_key_env_name() -> None:
+    with pytest.raises(ValueError, match="environment variable name"):
+        EndpointConfig(
+            provider="openrouter", base_url="https://openrouter.ai/api/v1", api_key_env=""
+        )
+
+
 def test_endpoint_requires_api_key_auth_on_the_selection() -> None:
     with pytest.raises(ValueError, match="endpoint requires auth mode 'api_key'"):
         AgentSelection.model_validate(
@@ -158,6 +202,67 @@ def test_experiment_accepts_endpoint_with_api_key_auth_mode() -> None:
     assert config.agents[0].endpoint is not None
 
 
+# -- selection keys ------------------------------------------------------------
+
+
+def test_selection_key_adds_the_endpoint_identity_only_with_an_endpoint() -> None:
+    assert AgentSelection(agent="codex", model="m").key == "codex:m"
+    assert AgentSelection(agent="codex").key == "codex"
+    gatewayed_key = AgentSelection.model_validate(selection("codex", "m")).key
+    assert gatewayed_key == "codex:m@openrouter:openrouter.ai"
+
+
+def test_endpoint_selections_differing_only_in_endpoint_are_distinct(
+    env_settings: Any,
+) -> None:
+    other = endpoint_payload(
+        provider="litellm", base_url="https://gw.example.com/v1", api_key_env="LITELLM_KEY"
+    )
+    config = experiment_config(
+        [selection("claude", "m"), {**selection("claude", "m"), "endpoint": other}]
+    )
+    plan = build(env_settings, FakeEnvironment()).plan(config)
+    assert len({t.trial_id for t in plan.trials}) == len(plan.trials)
+
+
+def test_identical_endpoint_selections_are_still_rejected() -> None:
+    with pytest.raises(ValueError, match="must be unique"):
+        experiment_config([selection("claude", "m"), selection("claude", "m")])
+
+
+# -- opencode endpoint model form ----------------------------------------------
+
+
+def test_opencode_endpoint_selection_requires_a_model() -> None:
+    with pytest.raises(ValueError, match="needs a model in the form 'openrouter/<model>'"):
+        AgentSelection.model_validate({"agent": "opencode", "endpoint": endpoint_payload()})
+
+
+def test_opencode_endpoint_model_must_name_the_endpoint_provider() -> None:
+    with pytest.raises(ValueError, match="'openai'"):
+        AgentSelection.model_validate(
+            {"agent": "opencode", "model": "openai/gpt-6-luna", "endpoint": endpoint_payload()}
+        )
+
+
+def test_non_opencode_endpoint_selections_keep_their_own_model_form() -> None:
+    # Only OpenCode's model form is 'provider/model': the other harnesses may
+    # run their default or a bare model ID through the gateway.
+    assert AgentSelection.model_validate({"agent": "claude", "endpoint": endpoint_payload()})
+    assert AgentSelection.model_validate(selection("codex", "gpt-6-luna"))
+
+
+def test_opencode_provider_config_rejects_a_foreign_provider_model(tmp_path: Path) -> None:
+    task = adapter_task(
+        Path("/tmp"),
+        model="openai/gpt-6-luna",
+        endpoint=ENDPOINT,
+        auth_mode=AuthMode.API_KEY,
+    )
+    with pytest.raises(ConfigurationError, match="openai/gpt-6-luna"):
+        OpenCodeAdapter().provider_config(task)
+
+
 # -- adapter mappings ---------------------------------------------------------
 
 
@@ -176,6 +281,63 @@ def test_codex_and_opencode_endpoint_auth_pass_the_variable_by_name() -> None:
         auth = adapter.endpoint_auth(ENDPOINT)
         assert auth.env == [KEY_ENV]
         assert auth.env_from == {}
+
+
+# -- auth resolution with an explicit provider key -----------------------------
+
+
+def test_resolve_auth_drops_the_adapter_api_key_from_explicit_auth(
+    env_settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(KEY_ENV, MARKER)
+    orchestrator = build(env_settings, FakeEnvironment())
+    orchestrator.registry.register(ClaudeCodeAdapter, replace=True)
+    agent_selection = AgentSelection.model_validate(
+        {
+            **selection("claude", "gpt-6-luna"),
+            "auth": {"mode": "api_key", "env": ["ANTHROPIC_API_KEY"]},
+        }
+    )
+    auth = orchestrator.resolve_auth(agent_selection, AuthMode.API_KEY)
+    # Claude Code prefers ANTHROPIC_API_KEY over ANTHROPIC_AUTH_TOKEN, so the
+    # explicit provider key must not reach the container next to the gateway
+    # token.
+    assert auth.env == []
+    assert auth.env_from == {"ANTHROPIC_AUTH_TOKEN": KEY_ENV}
+
+
+def test_resolve_auth_keeps_the_endpoint_variable_from_explicit_auth(
+    env_settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(KEY_ENV, MARKER)
+    orchestrator = build(env_settings, FakeEnvironment())
+    orchestrator.registry.register(CodexAdapter, replace=True)
+    agent_selection = AgentSelection.model_validate(
+        {
+            **selection("codex", "gpt-6-luna"),
+            "auth": {"mode": "api_key", "env": ["CODEX_API_KEY", KEY_ENV]},
+        }
+    )
+    auth = orchestrator.resolve_auth(agent_selection, AuthMode.API_KEY)
+    # Codex's own default variable is dropped; the endpoint's variable stays.
+    assert auth.env == [KEY_ENV]
+
+
+def test_resolve_auth_keeps_explicit_auth_without_an_endpoint(
+    env_settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(KEY_ENV, MARKER)
+    orchestrator = build(env_settings, FakeEnvironment())
+    agent_selection = AgentSelection.model_validate(
+        {
+            "agent": "claude",
+            "model": "m",
+            "auth": {"mode": "api_key", "env": ["ANTHROPIC_API_KEY"]},
+        }
+    )
+    auth = orchestrator.resolve_auth(agent_selection, AuthMode.API_KEY)
+    assert auth.env == ["ANTHROPIC_API_KEY"]
+    assert auth.env_from == {}
 
 
 def test_codex_endpoint_command() -> None:
@@ -222,10 +384,25 @@ def test_opencode_provider_config() -> None:
 
 
 class RecordingRunner:
-    """A CommandRunner that records every call and writes the log files."""
+    """A CommandRunner that records every call and writes the log files.
 
-    def __init__(self, stdout: str = "", stderr: str = "") -> None:
+    ``sh -c`` write commands are executed in miniature: the ``printf %s
+    <payload> > <target>`` part is interpreted by writing the payload to
+    ``scratch_dir`` mirroring the container path, so tests can assert on the
+    generated file instead of the command string.
+    """
+
+    def __init__(
+        self,
+        stdout: str = "",
+        stderr: str = "",
+        exit_code: int = 0,
+        timed_out: bool = False,
+        scratch_dir: Path | None = None,
+    ) -> None:
         self.stdout, self.stderr = stdout, stderr
+        self.exit_code, self.timed_out = exit_code, timed_out
+        self.scratch_dir = scratch_dir
         self.calls: list[dict[str, Any]] = []
 
     def run(
@@ -239,17 +416,36 @@ class RecordingRunner:
         stderr_path: Any = None,
     ) -> CommandResult:
         self.calls.append({"command": list(command), "env": dict(env or {})})
+        if (
+            self.scratch_dir is not None
+            and self.exit_code == 0
+            and not self.timed_out
+            and command[:2] == ["sh", "-c"]
+        ):
+            self._write_script_payload(command[2])
         for path, text in ((stdout_path, self.stdout), (stderr_path, self.stderr)):
             if path is not None:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(text)
         return CommandResult(
             command=list(command),
-            exit_code=0,
+            exit_code=self.exit_code,
             stdout=self.stdout,
             stderr=self.stderr,
             duration_seconds=0.0,
+            timed_out=self.timed_out,
         )
+
+    def _write_script_payload(self, script: str) -> None:
+        """Interpret ``mkdir -p <dir> && printf %s <payload> > <target>``."""
+        assert self.scratch_dir is not None
+        tokens = shlex.split(script)
+        marker = tokens.index("printf")
+        payload, target = tokens[marker + 2], tokens[tokens.index(">", marker) + 1]
+        assert payload and target.startswith("/")
+        path = self.scratch_dir / target.lstrip("/")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(payload, encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -272,7 +468,7 @@ def test_endpoint_key_value_never_leaks(
         log_dir=tmp_path,
         timeout_seconds=600,
         auth_mode=AuthMode.API_KEY,
-        model="openai/gpt-6-luna",
+        model="openrouter/openai/gpt-6-luna",
         endpoint=ENDPOINT,
     )
     result = adapter_cls().run(task, runner)
@@ -289,7 +485,8 @@ def test_endpoint_key_value_never_leaks(
 
 
 def test_opencode_run_writes_the_provider_config(tmp_path: Path) -> None:
-    runner = RecordingRunner(stdout='{"type": "step_finish"}')
+    scratch = tmp_path / "container"
+    runner = RecordingRunner(stdout='{"type": "step_finish"}', scratch_dir=scratch)
     task = AgentTask(
         trial_id="t1",
         prompt="Build the API",
@@ -301,22 +498,78 @@ def test_opencode_run_writes_the_provider_config(tmp_path: Path) -> None:
         endpoint=ENDPOINT,
     )
     OpenCodeAdapter().run(task, runner)
+    # The write command targets OpenCode's documented global config.
     write = next(call for call in runner.calls if call["command"][:2] == ["sh", "-c"])
+    assert f"> {shlex.quote(OPENCODE_CONFIG_PATH)}" in write["command"][2]
     agent = next(call for call in runner.calls if call["command"][0] == "opencode")
     assert "--model openrouter/openai/gpt-6-luna" in " ".join(agent["command"])
-    config = json.loads(
-        write["command"][2].split("printf %s ")[1].split(" > /home/agent/")[0].strip("'")
+
+    # The generated file exists, parses and carries the variable name only.
+    config_path = scratch / OPENCODE_CONFIG_PATH.lstrip("/")
+    assert config_path.is_file()
+    text = config_path.read_text(encoding="utf-8")
+    config = json.loads(text)
+    assert config["$schema"] == "opencode.ai/config.json"
+    entry = config["provider"]["openrouter"]
+    assert entry["options"]["baseURL"] == ENDPOINT.base_url
+    assert entry["options"]["apiKey"] == f"{{env:{KEY_ENV}}}"
+    assert entry["models"] == {"openai/gpt-6-luna": {}}
+    assert MARKER not in text
+
+
+def test_opencode_run_fails_when_the_config_write_fails(tmp_path: Path) -> None:
+    runner = RecordingRunner(
+        stdout='{"type": "step_finish"}',
+        exit_code=1,
+        stderr="cannot create opencode.json: Permission denied\n",
     )
-    assert config["provider"]["openrouter"]["options"]["baseURL"] == ENDPOINT.base_url
+    task = AgentTask(
+        trial_id="t1",
+        prompt="Build the API",
+        workdir="/workspace",
+        log_dir=tmp_path,
+        timeout_seconds=600,
+        auth_mode=AuthMode.API_KEY,
+        model="openrouter/openai/gpt-6-luna",
+        endpoint=ENDPOINT,
+    )
+    with pytest.raises(AgentExecutionError, match="exit code 1.*Permission denied"):
+        OpenCodeAdapter().run(task, runner)
+    # OpenCode must not start with missing or stale config.
+    assert not any(call["command"][0] == "opencode" for call in runner.calls)
+
+
+def test_opencode_run_fails_when_the_config_write_times_out(tmp_path: Path) -> None:
+    runner = RecordingRunner(stdout='{"type": "step_finish"}', timed_out=True)
+    task = AgentTask(
+        trial_id="t1",
+        prompt="Build the API",
+        workdir="/workspace",
+        log_dir=tmp_path,
+        timeout_seconds=600,
+        auth_mode=AuthMode.API_KEY,
+        model="openrouter/openai/gpt-6-luna",
+        endpoint=ENDPOINT,
+    )
+    with pytest.raises(AgentExecutionError, match="timed out"):
+        OpenCodeAdapter().run(task, runner)
+    assert not any(call["command"][0] == "opencode" for call in runner.calls)
 
 
 # -- orchestrator wiring ------------------------------------------------------
 
 
 class CostlyHarnessAdapter(FakeAdapter):
-    """A fake harness that reports an agent-computed cost, like the real CLIs can."""
+    """A fake harness that reports an agent-computed cost, like the real CLIs can.
+
+    Every run's ``AgentTask`` is captured on the subclass, so tests can assert
+    what the orchestrator actually forwarded to the adapter.
+    """
+
+    captured: ClassVar[list[Any]] = []
 
     def run(self, task: Any, runner: Any) -> Any:
+        type(self).captured.append(task)
         result = super().run(task, runner)
         usage = result.usage.model_copy()
         usage.cost = Metric[float].of(0.42, MetricSource.AGENT_REPORTED, unit="USD")
@@ -326,14 +579,17 @@ class CostlyHarnessAdapter(FakeAdapter):
 
 class FakeClaude(CostlyHarnessAdapter):
     name = "claude"
+    captured: ClassVar[list[Any]] = []
 
 
 class FakeCodex(CostlyHarnessAdapter):
     name = "codex"
+    captured: ClassVar[list[Any]] = []
 
 
 class FakeOpencode(CostlyHarnessAdapter):
     name = "opencode"
+    captured: ClassVar[list[Any]] = []
 
 
 @pytest.fixture
@@ -368,6 +624,8 @@ def test_one_model_on_three_harnesses_through_one_endpoint(
     env_settings: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv(KEY_ENV, MARKER)
+    for cls in (FakeClaude, FakeCodex, FakeOpencode):
+        cls.captured.clear()
     env = FakeEnvironment()
     orchestrator = build(env_settings, env)
     config = experiment_config(
@@ -379,6 +637,13 @@ def test_one_model_on_three_harnesses_through_one_endpoint(
     )
     summary = orchestrator.run(config)
     assert summary.by_status == {"passed": 3}
+
+    # The configured endpoint reaches the adapter inside AgentTask: the
+    # harness, not the orchestrator, is what maps it.
+    for cls in (FakeClaude, FakeCodex, FakeOpencode):
+        [task] = cls.captured
+        assert task.endpoint == ENDPOINT
+        assert task.auth_mode is AuthMode.API_KEY
 
     trials = list(orchestrator.store.iter_trials())
     assert {t.agent.name for t in trials} == {"claude", "codex", "opencode"}
@@ -437,7 +702,7 @@ def gatewayed(
     trial_id: str,
     *,
     agent: str = "codex",
-    model: str = "openai/gpt-6-luna",
+    model: str | None = "openai/gpt-6-luna",
     provider: str = "openrouter",
     endpoint_host: str | None = "openrouter.ai",
 ) -> Any:
@@ -465,6 +730,44 @@ def test_harness_comparison_refuses_mixed_providers() -> None:
     for dimension in (ComparisonDimension.HARNESS, ComparisonDimension.AGENT):
         with pytest.raises(ValueError, match="harness comparison mixes providers"):
             compare_trials([direct, gateway], dimension)
+
+
+def test_agent_model_comparison_refuses_mixed_providers() -> None:
+    # Same harness and model label, one direct and one through a gateway: the
+    # rows must not be combined by the harness+model dimensions either.
+    direct = gatewayed("a", provider="openai", endpoint_host=None, model="gpt-6-luna")
+    gateway = gatewayed("b", model="gpt-6-luna")
+    for dimension in (ComparisonDimension.AGENT_MODEL, ComparisonDimension.HARNESS_MODEL):
+        with pytest.raises(ValueError, match="harness comparison mixes providers"):
+            compare_trials([direct, gateway], dimension)
+
+
+def test_harness_and_provider_dimensions_group_per_provider() -> None:
+    # Grouping by provider explicitly asks for one row per provider.
+    direct = gatewayed("a", provider="openai", endpoint_host=None, model="gpt-6-luna")
+    gateway = gatewayed("b", model="gpt-6-luna")
+    rows = compare_trials(
+        [direct, gateway], [ComparisonDimension.HARNESS, ComparisonDimension.PROVIDER]
+    )
+    assert {row.value for row in rows} == {"codex + openai", "codex + openrouter"}
+
+
+def test_harness_and_provider_dimensions_allow_an_unknown_provider() -> None:
+    # 'unknown' is shown as its own provider, like --by provider does.
+    legacy = trial("r1", "a", "codex", TrialStatus.PASSED)
+    modern = gatewayed("b", provider="openai", endpoint_host=None, model=None)
+    rows = compare_trials(
+        [legacy, modern], [ComparisonDimension.HARNESS, ComparisonDimension.PROVIDER]
+    )
+    assert {row.value for row in rows} == {"codex + unknown", "codex + openai"}
+
+
+def test_harness_and_provider_dimensions_still_check_comparability() -> None:
+    one = gatewayed("a")
+    other = gatewayed("b")
+    other.max_repairs = 1
+    with pytest.raises(ValueError, match="repair budget"):
+        compare_trials([one, other], [ComparisonDimension.HARNESS, ComparisonDimension.PROVIDER])
 
 
 def test_provider_dimension_needs_one_harness_model_and_stack() -> None:

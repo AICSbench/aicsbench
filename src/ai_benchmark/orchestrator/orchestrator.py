@@ -27,7 +27,7 @@ from ai_benchmark import __version__
 from ai_benchmark.agents.base import AgentAdapter, AgentAvailability, AgentRunResult, AgentTask
 from ai_benchmark.agents.registry import AgentRegistry
 from ai_benchmark.config.auth import AgentAuthConfig
-from ai_benchmark.config.experiment import AgentSelection, ExperimentConfig
+from ai_benchmark.config.experiment import AgentSelection, EndpointConfig, ExperimentConfig
 from ai_benchmark.config.loader import SpecCatalog
 from ai_benchmark.config.settings import PlatformSettings
 from ai_benchmark.config.stack import StackSpec
@@ -184,7 +184,7 @@ class BenchmarkOrchestrator:
             auth = adapter.endpoint_auth(selection.endpoint)
             if selection.auth is not None:
                 auth = selection.auth.merged_with(auth)
-            return auth
+            return _drop_shadowed_api_key(adapter, selection.endpoint, auth)
         if selection.auth is not None:
             return selection.auth
         return adapter.default_auth(mode)
@@ -777,6 +777,24 @@ def _sum_float(metrics: list[Metric[float]]) -> Metric[float]:
         sum(metric.value or 0.0 for metric in metrics), MetricSource.DERIVED,
         unit=metrics[0].unit, note="sum across agent attempts"
     )
+
+
+def _drop_shadowed_api_key(
+    adapter: AgentAdapter, endpoint: EndpointConfig, auth: AgentAuthConfig
+) -> AgentAuthConfig:
+    """The endpoint's credentials with the adapter's provider API-key variable removed.
+
+    Some CLIs prefer their provider's own key variable over the gateway
+    credential (Claude Code checks ``ANTHROPIC_API_KEY`` before the gateway's
+    ``ANTHROPIC_AUTH_TOKEN``), so an explicit ``auth.env`` entry for it would
+    bypass the gateway. The endpoint's own variable (``endpoint.api_key_env``)
+    is never dropped.
+    """
+    shadowed = set(adapter.default_auth(AuthMode.API_KEY).env) - {endpoint.api_key_env}
+    env = [name for name in auth.env if name not in shadowed]
+    if env == auth.env:
+        return auth
+    return AgentAuthConfig(mode=auth.mode, env=env, env_from=auth.env_from, files=auth.files)
 
 
 def _final_status(

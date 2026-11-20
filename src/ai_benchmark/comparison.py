@@ -17,12 +17,18 @@ _UNKNOWN_PROVIDER_REFUSAL = (
     "harness comparison needs a recorded provider; exclude trials recorded before provider tracking"
 )
 
-# The harness dimensions hold every axis fixed, including the provider (task 9).
-_HARNESS_DIMENSIONS = frozenset(
+# These dimensions fix the harness and model pair, so the trials in a row must
+# also share one provider (task 9): a Codex run against OpenAI directly is
+# never ranked against a run of the same harness and model through a gateway.
+# ``HARNESS_MODEL`` never reaches _check_values (it expands to HARNESS + MODEL),
+# it is listed so a future refactor cannot lose the guard.
+_SINGLE_PROVIDER_DIMENSIONS = frozenset(
     {
         ComparisonDimension.AGENT,
         ComparisonDimension.HARNESS,
         ComparisonDimension.HARNESS_VERSION,
+        ComparisonDimension.AGENT_MODEL,
+        ComparisonDimension.HARNESS_MODEL,
     }
 )
 
@@ -114,11 +120,16 @@ def _check_values(dimensions: tuple[ComparisonDimension, ...], trials: list[Tria
         len(harnesses) > 1 or len(models) > 1 or len(stacks) > 1
     ):
         raise ValueError(_HARNESS_VERSION_REFUSAL)
-    if _HARNESS_DIMENSIONS.intersection(dimensions):
+    if ComparisonDimension.PROVIDER not in dimensions and _SINGLE_PROVIDER_DIMENSIONS.intersection(
+        dimensions
+    ):
         # A harness run's provider must be recorded and single: a Codex run
         # against OpenAI directly is never ranked against a Claude Code run
         # through OpenRouter, and two unknown-provider trials may have used
-        # different gateways.
+        # different gateways. When PROVIDER is an explicit grouping dimension
+        # the user asked for one row per provider, so the guard is skipped:
+        # rows never rank a direct run against a gateway run, and the
+        # comparability_key check in compare_trials still applies regardless.
         if None in providers:
             raise ValueError(_UNKNOWN_PROVIDER_REFUSAL)
         if len(providers) > 1:

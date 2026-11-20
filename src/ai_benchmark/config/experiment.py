@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -48,7 +49,7 @@ class EndpointConfig(StrictModel):
     @field_validator("api_key_env")
     @classmethod
     def _names_not_values(cls, v: str) -> str:
-        if not v.replace("_", "").isalnum() or not v[0].isalpha():
+        if not v or not v.replace("_", "").isalnum() or not v[0].isalpha():
             raise ValueError(
                 f"'{v}' is not an environment variable name. "
                 "Put the secret in the host environment and pass only its name."
@@ -71,23 +72,40 @@ class EndpointConfig(StrictModel):
                 "base_url must not contain a query string or fragment; it could carry the key"
             )
         host = (parts.hostname or "").lower()
-        if parts.scheme == "https":
-            return v
-        if host == "localhost" or "." not in host:  # bare host: a Docker service name
-            return v
+        if not host:
+            raise ValueError("base_url needs a host name")
+        try:
+            # Raises for a non-numeric or out-of-range port (urllib.parse).
+            port = parts.port
+        except ValueError:
+            raise ValueError(f"base_url has an invalid port: '{v}'") from None
+        if port is not None and not 1 <= port <= 65535:
+            raise ValueError(f"base_url has an invalid port: '{v}'")
         try:
             address = ipaddress.ip_address(host)
         except ValueError:
-            raise ValueError(
-                f"plain http:// is only allowed for localhost, a private IP or a Docker "
-                f"service name, not '{host}'; use https://"
-            ) from None
-        if not (address.is_private or address.is_loopback):
-            raise ValueError(
-                f"plain http:// is only allowed for localhost, a private IP or a Docker "
-                f"service name, not the public address '{host}'; use https://"
-            )
-        return v
+            address = None
+            if host.isdigit():
+                # 'http://16909060' means http://1.2.3.4 to a URL parser, so a
+                # dotless integer host is still an IP literal, not a Docker
+                # service name.
+                with contextlib.suppress(ValueError):
+                    address = ipaddress.ip_address(int(host))
+        if parts.scheme == "https":
+            return v
+        if address is not None:
+            if not (address.is_private or address.is_loopback):
+                raise ValueError(
+                    f"plain http:// is only allowed for localhost, a private IP or a Docker "
+                    f"service name, not the public address '{host}'; use https://"
+                )
+            return v
+        if host == "localhost" or "." not in host:  # bare host: a Docker service name
+            return v
+        raise ValueError(
+            f"plain http:// is only allowed for localhost, a private IP or a Docker "
+            f"service name, not '{host}'; use https://"
+        )
 
 
 class AgentSelection(StrictModel):
@@ -117,7 +135,13 @@ class AgentSelection(StrictModel):
 
     @property
     def key(self) -> str:
-        return f"{self.agent}:{self.model}" if self.model else self.agent
+        key = f"{self.agent}:{self.model}" if self.model else self.agent
+        if self.endpoint is not None:
+            # Two selections differing only in their endpoint are different
+            # trials: without this they collide in the duplicate check and
+            # their trial IDs would overwrite each other's results.
+            return f"{key}@{self.endpoint.provider}:{self.endpoint.host}"
+        return key
 
     @model_validator(mode="after")
     def _endpoint_requires_api_key(self) -> AgentSelection:
@@ -128,6 +152,31 @@ class AgentSelection(StrictModel):
         ):
             raise ValueError(
                 "an endpoint requires auth mode 'api_key'; run it as a separate experiment"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _endpoint_needs_the_gateway_model(self) -> AgentSelection:
+        """OpenCode's model form is ``--model <provider>/<model>`` (required form).
+
+        With a custom endpoint the prefix must name the endpoint's provider, or
+        OpenCode selects another provider and bypasses the gateway. The other
+        harnesses keep their own model forms (Codex and Claude Code take the
+        bare model ID even through a gateway).
+        """
+        if self.agent != "opencode" or self.endpoint is None:
+            return self
+        provider, separator, model = (self.model or "").partition("/")
+        if not separator or not model:
+            raise ValueError(
+                f"an opencode selection with an endpoint needs a model in the form "
+                f"'{self.endpoint.provider}/<model>', got {self.model!r}"
+            )
+        if provider != self.endpoint.provider:
+            raise ValueError(
+                f"opencode model '{self.model}' selects provider '{provider}', but the "
+                f"endpoint provider is '{self.endpoint.provider}'; the model must be "
+                f"'{self.endpoint.provider}/<model>' so the run goes through the gateway"
             )
         return self
 

@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -13,6 +14,20 @@ def test_auth_lists_names_not_secret_values() -> None:
     with pytest.raises(ValidationError, match="environment variable name"):
         AgentAuthConfig(env=["sk-ant-oat01-abc123"])
     assert AgentAuthConfig(env=["CLAUDE_CODE_OAUTH_TOKEN"]).mode is AuthMode.SUBSCRIPTION
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"env": [""]},
+        {"env": ["TOKEN_A", ""]},
+        {"env_from": {"": "HOST_VAR"}},
+        {"env_from": {"CONTAINER_VAR": ""}},
+    ],
+)
+def test_auth_rejects_empty_variable_names(kwargs: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError, match="environment variable name"):
+        AgentAuthConfig(**kwargs)
 
 
 def test_auth_requires_some_credential() -> None:

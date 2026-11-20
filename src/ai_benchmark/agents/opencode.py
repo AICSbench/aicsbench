@@ -43,6 +43,7 @@ from ai_benchmark.agents.cli import (
 from ai_benchmark.agents.registry import register_agent
 from ai_benchmark.config.auth import AgentAuthConfig, CredentialFile
 from ai_benchmark.environment.base import AgentImageLayer, CommandRunner
+from ai_benchmark.errors import AgentExecutionError, ConfigurationError
 from ai_benchmark.models.enums import AuthMode, MetricSource
 from ai_benchmark.models.metrics import Metric, TokenUsage, UsageMetrics
 
@@ -104,7 +105,7 @@ class OpenCodeAdapter(CliAgentAdapter):
 
     def run(self, task: AgentTask, runner: CommandRunner) -> AgentRunResult:
         if task.endpoint is not None:
-            runner.run(
+            res = runner.run(
                 [
                     "sh",
                     "-c",
@@ -115,6 +116,14 @@ class OpenCodeAdapter(CliAgentAdapter):
                 timeout_seconds=60,
                 workdir=task.workdir,
             )
+            # A failed or timed-out write would leave OpenCode with missing or
+            # stale config, so the run must not start.
+            if res.timed_out or not res.ok:
+                why = "timed out" if res.timed_out else f"exit code {res.exit_code}"
+                tail = "\n".join(res.stderr.splitlines()[-5:])
+                raise AgentExecutionError(
+                    f"could not write the OpenCode provider config ({why}): {tail or 'no stderr'}"
+                )
         return super().run(task, runner)
 
     def provider_config(self, task: AgentTask) -> dict[str, Any]:
@@ -125,6 +134,16 @@ class OpenCodeAdapter(CliAgentAdapter):
         """
         endpoint = task.endpoint
         assert endpoint is not None
+        # Config validation rejects these; re-checked here so a programmatic
+        # AgentTask cannot point --model at another provider and bypass the
+        # gateway.
+        provider, separator, _ = (task.model or "").partition("/")
+        if not separator or provider != endpoint.provider:
+            raise ConfigurationError(
+                f"opencode model {task.model!r} must be "
+                f"'{endpoint.provider}/<model>' to run through the "
+                f"'{endpoint.provider}' endpoint"
+            )
         entry: dict[str, Any] = {
             "npm": "@ai-sdk/openai-compatible",
             "name": endpoint.provider,

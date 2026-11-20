@@ -64,7 +64,7 @@ class AgentAuthConfig(StrictModel):
     @classmethod
     def _names_not_values(cls, v: list[str]) -> list[str]:
         for name in v:
-            if not name.replace("_", "").isalnum() or not name[0].isalpha():
+            if not name or not name.replace("_", "").isalnum() or not name[0].isalpha():
                 raise ValueError(
                     f"'{name}' is not an environment variable name. "
                     "Put the secret in the host environment and list only its name."
@@ -76,7 +76,7 @@ class AgentAuthConfig(StrictModel):
     def _renames_not_values(cls, v: dict[str, str]) -> dict[str, str]:
         for container, host in v.items():
             for name in (container, host):
-                if not name.replace("_", "").isalnum() or not name[0].isalpha():
+                if not name or not name.replace("_", "").isalnum() or not name[0].isalpha():
                     raise ValueError(
                         f"'{name}' is not an environment variable name. "
                         "Map container variable names to host variable names; never a value."
