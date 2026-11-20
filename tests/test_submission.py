@@ -213,7 +213,9 @@ def test_hash_rejects_missing_file(catalog: SpecCatalog, tmp_path: Path) -> None
     assert "hash" in codes(validate_bundle(bundle, catalog))
 
 
-@pytest.mark.parametrize("entry", ["../escape.txt", "/etc/aicsbench-escape"])
+@pytest.mark.parametrize(
+    "entry", ["../escape.txt", "/etc/aicsbench-escape", "trials/../manifest.json"]
+)
 def test_hash_rejects_escaping_files_entry(
     catalog: SpecCatalog, tmp_path: Path, entry: str
 ) -> None:
@@ -651,6 +653,24 @@ def test_log_archive_rejects_unsafe_member_path(catalog: SpecCatalog, tmp_path: 
 def test_log_archive_without_secrets_passes(catalog: SpecCatalog, tmp_path: Path) -> None:
     bundle = _log_bundle(catalog, tmp_path)
     _add_log(bundle, "trial-001", "plain output\nexit code 0\n")
+    assert validate_bundle(bundle, catalog) == []
+
+
+def test_log_archive_reports_unparseable_json_member(
+    catalog: SpecCatalog, tmp_path: Path
+) -> None:
+    bundle = _log_bundle(catalog, tmp_path)
+    _add_log(bundle, "trial-001", "[" * 10000 + "]" * 10000, member="output.json")
+    problems = validate_bundle(bundle, catalog)
+    assert [p.code for p in problems] == ["layout"]
+    assert "nested too deeply" in problems[0].message
+
+
+def test_log_archive_tolerates_oversized_json_integer(
+    catalog: SpecCatalog, tmp_path: Path
+) -> None:
+    bundle = _log_bundle(catalog, tmp_path)
+    _add_log(bundle, "trial-001", '{"n": ' + "9" * 5000 + "}\n", member="output.json")
     assert validate_bundle(bundle, catalog) == []
 
 

@@ -113,7 +113,9 @@ def scan_text(text: str) -> list[str]:
             continue
         try:
             data = json.loads(stripped)
-        except (json.JSONDecodeError, RecursionError):
+        except (ValueError, RecursionError):
+            # ValueError covers JSONDecodeError and the plain ValueError
+            # Python 3.11+ raises for very long integers.
             continue
         matches.extend(
             f"{where} {path}" if path != "<value>" else where for path in find_secrets(data)

@@ -13,7 +13,6 @@ bundle is valid. Two modes:
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import re
@@ -186,7 +185,11 @@ def _check_hashes(bundle: Path, submission: SubmissionInfo, problems: list[Probl
     for relative, expected in submission.files.items():
         file = bundle / relative
         try:
-            escapes = Path(relative).is_absolute() or not file.resolve().is_relative_to(bundle)
+            escapes = (
+                Path(relative).is_absolute()
+                or ".." in Path(relative).parts
+                or not file.resolve().is_relative_to(bundle)
+            )
         except (OSError, RuntimeError) as exc:
             # A self-referencing symlink makes Path.resolve raise RuntimeError.
             problems.append(Problem("hash", relative, f"cannot resolve the file path: {exc}"))
@@ -474,8 +477,14 @@ def _report_text_matches(
     where = f"{archive_relative}#{member_name}"
     matches = scan_text(text)
     if member_name.endswith(".json"):
-        with contextlib.suppress(ValueError):
+        try:
             matches += find_secrets(json.loads(text))
+        except RecursionError:
+            problems.append(
+                Problem("layout", where, "JSON member is nested too deeply to parse")
+            )
+        except ValueError:
+            pass
     if matches:
         problems.append(Problem("secret", where, f"possible secret: {', '.join(matches)}"))
 
