@@ -602,8 +602,9 @@ def compare(
         dimensions = _dimensions(by)
         if columns:
             trials = list(store.iter_trials(filters))
-            # Each column must hold one acceptance suite; a run without a recorded
-            # hash counts as its own (unknown) suite, so it never pools with a known one.
+            # Each column must hold one acceptance suite. Runs without a recorded
+            # hash (before task 2) pool with each other, as single-task compare
+            # does, but never with a run whose hash is known.
             # Manifests are read only for runs in the selected columns.
             suite_of = functools.cache(lambda run: store.load_manifest(run).acceptance_suite_sha256)
             matrix = compare_matrix(
