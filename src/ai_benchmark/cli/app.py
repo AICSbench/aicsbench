@@ -5,6 +5,8 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
+import shutil
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,7 +41,9 @@ from ai_benchmark.reporting import export_trials, render_report
 from ai_benchmark.site.export import export_site
 from ai_benchmark.storage.base import ResultFilter
 from ai_benchmark.storage.json_store import JsonResultStore
-from ai_benchmark.submission.models import Problem
+from ai_benchmark.submission.github import GitHub
+from ai_benchmark.submission.models import Problem, Submitter
+from ai_benchmark.submission.submit import DEFAULT_DATA_REPO, build_bundle, open_pull_request
 from ai_benchmark.submission.validate import validate_bundle
 
 app = typer.Typer(
@@ -345,6 +349,115 @@ def _bundle_identity(bundle: Path) -> tuple[str | None, str | None]:
     except OSError:
         manifest_hash = None
     return run_id, manifest_hash
+
+
+@app.command()
+def submit(
+    ctx: typer.Context,
+    run_id: Annotated[str, typer.Option("--run", help="The finished run to submit.")],
+    name: Annotated[
+        Optional[str], typer.Option("--name", help="Submitter name (default: git user.name).")
+    ] = None,
+    github: Annotated[
+        Optional[str],
+        typer.Option("--github", help="GitHub handle (default: the account gh is logged in as)."),
+    ] = None,
+    notes: Annotated[
+        str, typer.Option("--notes", help="Hardware or anything unusual, up to 2000 characters.")
+    ] = "",
+    with_logs: Annotated[
+        bool, typer.Option("--with-logs", help="Include each trial's logs folder (scanned).")
+    ] = False,
+    out: Annotated[
+        Optional[Path],
+        typer.Option("--out", help="Write the bundle to DIR/submissions/... instead of a PR."),
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Show the bundle and its validation only.")
+    ] = False,
+    data_repo: Annotated[
+        str, typer.Option("--data-repo", help="Repository the pull request goes to.")
+    ] = DEFAULT_DATA_REPO,
+    against: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--against", help="With --out or --dry-run: a data repository checkout for duplicates."
+        ),
+    ] = None,
+) -> None:
+    """Pack a finished run into a bundle and open a pull request on the data repository."""
+    if out is not None and dry_run:
+        raise _fail("use either --out or --dry-run", code=2)
+    pr_mode = out is None and not dry_run
+    if pr_mode and against is not None:
+        raise _fail("--against is for --out and --dry-run; PR mode checks upstream itself", 2)
+    if against is not None and not against.is_dir():
+        raise _fail(f"not a directory: {against}", code=2)
+    settings, catalog = _ctx(ctx).settings, _ctx(ctx).catalog
+    gh = GitHub()
+    logged_in = gh.logged_in()
+    if pr_mode and not logged_in:
+        raise _fail(
+            "the GitHub CLI (gh) is not installed or not logged in. Run `gh auth login`, or "
+            f"write the bundle with `aicsbench submit --run {run_id} --out DIR`, copy "
+            f"DIR/submissions/ into a fork of {data_repo} and open the pull request by hand."
+        )
+    try:
+        handle = (github or "").removeprefix("@") or (gh.login() if logged_in else None)
+        submitter_name = name or gh.git_user_name()
+        if not submitter_name:
+            raise _fail("no submitter name: pass --name or set git config user.name", code=2)
+        with tempfile.TemporaryDirectory(prefix="aicsbench-submit-") as tmp:
+            bundle = build_bundle(
+                settings,
+                catalog,
+                run_id,
+                Path(tmp) / "bundle",
+                submitter=Submitter(name=submitter_name, github=handle),
+                notes=notes,
+                with_logs=with_logs,
+            )
+            for warning in bundle.warnings:
+                err_console.print(f"[yellow]warning[/yellow] {warning}")
+            problems = bundle.problems
+            url = None
+            if not problems and pr_mode:
+                assert handle is not None
+                url, problems = open_pull_request(
+                    bundle,
+                    catalog,
+                    gh,
+                    data_repo,
+                    Path(tmp) / "clones",
+                    author_name=submitter_name,
+                    author_handle=handle,
+                )
+            elif not problems:
+                problems = validate_bundle(bundle.path, catalog, against=against)
+                if against is None:
+                    typer.echo("duplicate check skipped: pass --against DIR (a data checkout)")
+            if problems:
+                for problem in problems:
+                    typer.echo(str(problem))
+                raise _fail("the bundle was refused; nothing was written or sent")
+            relative = Path("submissions") / bundle.task_id / bundle.run_id
+            if dry_run:
+                for file in sorted(bundle.path.rglob("*")):
+                    if file.is_file():
+                        typer.echo(
+                            f"{file.stat().st_size:>10}  {relative / file.relative_to(bundle.path)}"
+                        )
+                typer.echo("validation: ok")
+            elif out is not None:
+                target = out / relative
+                if target.exists():
+                    raise _fail(f"{target} already exists")
+                shutil.copytree(bundle.path, target)
+                typer.echo(f"wrote {target}")
+            else:
+                typer.echo(url)
+    except (BenchmarkError, OSError) as exc:
+        raise _fail(str(exc)) from None
 
 
 @app.command()

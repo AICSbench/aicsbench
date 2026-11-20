@@ -136,8 +136,8 @@ maintainer's setup steps.
 | --- | --- |
 | 1 Harness fields and dimensions | done in [aicsbench/aicsbench#21](https://github.com/AICSbench/aicsbench/pull/21) |
 | 2 Submission bundle and validator | done in [aicsbench/aicsbench#23](https://github.com/AICSbench/aicsbench/pull/23) |
-| 3 `aicsbench submit` | not started |
-| 4 Site export | in review on `feat/phase5-site-export` |
+| 3 `aicsbench submit` | in review in [aicsbench/aicsbench#28](https://github.com/AICSbench/aicsbench/pull/28) |
+| 4 Site export | done in [aicsbench/aicsbench#26](https://github.com/AICSbench/aicsbench/pull/26) |
 | 5 Compare page | not started |
 | 6 Data repository | not started |
 | 10 SvelteKit site | not started |
