@@ -2,11 +2,41 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from statistics import mean, stdev
 
 from ai_benchmark.models.enums import ComparisonDimension, TrialStatus
 from ai_benchmark.models.results import TrialResult
+
+_HARNESS_VERSION_REFUSAL = (
+    "harness version comparison mixes harnesses, models or stacks; filter to one of each"
+)
+
+# The axes a row must hold fixed. A dimension that does not cover an axis leaves
+# it to vary, so the selection must already have one value for it.
+_COVERAGE: dict[ComparisonDimension, frozenset[str]] = {
+    ComparisonDimension.AGENT: frozenset({"harness"}),
+    ComparisonDimension.HARNESS: frozenset({"harness"}),
+    ComparisonDimension.HARNESS_VERSION: frozenset({"harness"}),
+    ComparisonDimension.MODEL: frozenset({"model"}),
+    ComparisonDimension.AGENT_MODEL: frozenset({"harness", "model"}),
+    ComparisonDimension.STACK: frozenset({"stack"}),
+    ComparisonDimension.LANGUAGE: frozenset({"stack"}),
+    ComparisonDimension.FRAMEWORK: frozenset({"stack"}),
+    ComparisonDimension.TASK: frozenset(),
+}
+
+# New dimensions that are aliases for a combination. Expanding them makes
+# ``--by harness_model`` produce exactly the rows of ``--by harness,model``.
+_EXPANSIONS: dict[ComparisonDimension, tuple[ComparisonDimension, ...]] = {
+    ComparisonDimension.HARNESS_MODEL: (
+        ComparisonDimension.HARNESS,
+        ComparisonDimension.MODEL,
+    ),
+}
+
+_AXIS_PLURAL = {"harness": "harnesses", "model": "models", "stack": "stacks"}
 
 
 @dataclass(frozen=True)
@@ -23,9 +53,76 @@ class ComparisonRow:
     low_confidence: bool
 
 
+def _join_axes(axes: list[str], *, plural: bool) -> str:
+    names = [_AXIS_PLURAL[axis] if plural else axis for axis in axes]
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _normalize(
+    dimension: ComparisonDimension | Iterable[ComparisonDimension],
+) -> tuple[ComparisonDimension, ...]:
+    """Validate the requested dimensions and expand combination aliases."""
+    requested: tuple[ComparisonDimension, ...] = (
+        (dimension,) if isinstance(dimension, ComparisonDimension) else tuple(dimension)
+    )
+    if not requested:
+        raise ValueError("compare by at least one dimension")
+    expanded: list[ComparisonDimension] = []
+    for item in requested:
+        if not isinstance(item, ComparisonDimension):
+            raise ValueError(f"unknown comparison dimension: {item!r}")
+        expanded.extend(_EXPANSIONS.get(item, (item,)))
+    if len(expanded) > 3:
+        raise ValueError("compare by at most 3 dimensions")
+    for item in expanded:
+        if expanded.count(item) > 1:
+            raise ValueError(f"comparison dimension repeats: {item.value}")
+    covered: dict[str, ComparisonDimension] = {}
+    for item in expanded:
+        for axis in _COVERAGE[item]:
+            if axis in covered:
+                raise ValueError(
+                    f"dimensions {covered[axis].value} and {item.value} both group by "
+                    f"the {axis} axis; pick one"
+                )
+            covered[axis] = item
+    return tuple(expanded)
+
+
+def _check_values(dimensions: tuple[ComparisonDimension, ...], trials: list[TrialResult]) -> None:
+    harnesses = {trial.agent.name for trial in trials}
+    models = {trial.agent.model_key for trial in trials}
+    stacks = {trial.environment.stack for trial in trials}
+    if dimensions == (ComparisonDimension.HARNESS_VERSION,) and (
+        len(harnesses) > 1 or len(models) > 1 or len(stacks) > 1
+    ):
+        raise ValueError(_HARNESS_VERSION_REFUSAL)
+    covered = {axis for dimension in dimensions for axis in _COVERAGE[dimension]}
+    mixed = [
+        axis
+        for axis, values in (("harness", harnesses), ("model", models), ("stack", stacks))
+        if axis not in covered and len(values) > 1
+    ]
+    if mixed:
+        label = " + ".join(dimension.value for dimension in dimensions)
+        raise ValueError(
+            f"{label} comparison mixes {_join_axes(mixed, plural=True)}; "
+            f"filter to one {_join_axes(mixed, plural=False)}"
+        )
+
+
 def compare_trials(
-    trials: list[TrialResult], dimension: ComparisonDimension, min_trials: int = 3
+    trials: list[TrialResult],
+    dimension: ComparisonDimension | Iterable[ComparisonDimension],
+    min_trials: int = 3,
 ) -> list[ComparisonRow]:
+    """Group trials by one dimension or by a combination of up to three.
+
+    A row holds the harness (agent CLI), model key and stack fixed: each axis
+    must be covered by a dimension or already have one value in the selection.
+    """
     if min_trials < 1:
         raise ValueError("min_trials must be at least 1")
     keys = {trial.comparability_key() for trial in trials}
@@ -35,26 +132,16 @@ def compare_trials(
             "parallelism; "
             "filter to one set"
         )
-    stack_axes = {
-        ComparisonDimension.STACK, ComparisonDimension.LANGUAGE, ComparisonDimension.FRAMEWORK
-    }
-    if dimension in stack_axes and len({trial.agent.agent_model for trial in trials}) > 1:
-        raise ValueError("stack comparison mixes agent/models; filter to one agent and model")
-    if dimension not in stack_axes and len({trial.environment.stack for trial in trials}) > 1:
-        raise ValueError("model comparison mixes stacks; filter to one stack")
-    if dimension is ComparisonDimension.MODEL and len({trial.agent.name for trial in trials}) > 1:
-        raise ValueError("model comparison mixes agents; filter to one agent")
-    if dimension is ComparisonDimension.AGENT and len(
-        {trial.agent.model_label for trial in trials}
-    ) > 1:
-        raise ValueError("agent comparison mixes models; filter to one model")
+    dimensions = _normalize(dimension)
+    _check_values(dimensions, trials)
 
-    groups: dict[str, list[TrialResult]] = {}
+    groups: dict[tuple[str, ...], list[TrialResult]] = {}
     for trial in trials:
-        groups.setdefault(trial.dimension_value(dimension), []).append(trial)
+        values = tuple(trial.dimension_value(item) for item in dimensions)
+        groups.setdefault(values, []).append(trial)
 
     rows = []
-    for value, group in groups.items():
+    for values, group in groups.items():
         times = [
             trial.metrics.performance.agent_execution_seconds.value
             for trial in group
@@ -73,7 +160,7 @@ def compare_trials(
         ]
         rows.append(
             ComparisonRow(
-                value=value,
+                value=" + ".join(values),
                 trials=len(group),
                 passed=sum(trial.status is TrialStatus.PASSED for trial in group),
                 rate_limited=sum(trial.rate_limited for trial in group),

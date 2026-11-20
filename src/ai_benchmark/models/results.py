@@ -10,6 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from ai_benchmark.models.enums import AuthMode, ComparisonDimension, ToolingMode, TrialStatus
 from ai_benchmark.models.metrics import Metric, TrialMetrics
 
+_PROVIDER_MODEL_HARNESSES = frozenset({"opencode"})
+"""Harnesses whose model IDs are ``provider/model``; their labels drop the provider."""
+
 
 class AgentRecord(BaseModel):
     """Which agent ran, as observed at run time."""
@@ -37,6 +40,22 @@ class AgentRecord(BaseModel):
     @property
     def model_label(self) -> str:
         return self.resolved_model or f"{self.name}-default"
+
+    @property
+    def model_key(self) -> str:
+        """The model label without a harness-specific provider prefix, lower case.
+
+        OpenCode reports ``provider/model``; Codex and Claude Code report the model
+        name itself. Stripping the provider only for harnesses that use that form
+        lets one model compare across harnesses. Gateway IDs on other harnesses
+        keep their prefix (task 9).
+        """
+        label = self.model_label.lower()
+        if self.name in _PROVIDER_MODEL_HARNESSES:
+            provider, separator, model = label.partition("/")
+            if provider and separator and model:
+                return model
+        return label
 
     @property
     def agent_model(self) -> str:
@@ -123,8 +142,13 @@ class TrialResult(BaseModel):
         """This trial's value on a comparison dimension (used for grouping)."""
         values = {
             ComparisonDimension.AGENT: self.agent.name,
+            ComparisonDimension.HARNESS: self.agent.name,
             ComparisonDimension.MODEL: self.agent.model_label,
             ComparisonDimension.AGENT_MODEL: self.agent.agent_model,
+            ComparisonDimension.HARNESS_MODEL: self.agent.agent_model,
+            ComparisonDimension.HARNESS_VERSION: (
+                f"{self.agent.name} {self.agent.version or 'unknown'}"
+            ),
             ComparisonDimension.STACK: self.environment.stack,
             ComparisonDimension.LANGUAGE: self.environment.language,
             ComparisonDimension.FRAMEWORK: self.environment.framework,

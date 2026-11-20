@@ -18,20 +18,51 @@ from ai_benchmark.models import (
     TrialStatus,
 )
 from ai_benchmark.reporting import csv_text, export_trials, render_report
-from ai_benchmark.storage import JsonResultStore
+from ai_benchmark.storage import JsonResultStore, ResultFilter
 
 from .test_storage import manifest, trial
 
 
 def test_flat_export_keeps_unavailable_metrics_null() -> None:
     item = trial("r1", "t1", "codex", TrialStatus.PASSED)
+    item.agent.version = "0.167.2"
+    item.agent.requested_model = "gpt-6-luna"
+    item.agent.reasoning_effort = "high"
     item.metrics.performance.agent_execution_seconds = Metric[float].of(7.5, MetricSource.MEASURED)
     row = json.loads(export_trials([item], "jsonl"))
     assert row["agent_seconds"] == 7.5
     assert row["cost_usd"] is None and row["cost_availability"] == "unavailable"
     assert row["input_tokens"] is None
+    assert (row["harness"], row["harness_version"]) == ("codex", "0.167.2")
+    assert (row["requested_model"], row["reasoning_effort"]) == ("gpt-6-luna", "high")
+    assert list(row)[-4:] == [
+        "harness",
+        "harness_version",
+        "requested_model",
+        "reasoning_effort",
+    ]
     csv_row = next(csv.DictReader(io.StringIO(export_trials([item], "csv"))))
     assert csv_row["agent_seconds"] == "7.5" and csv_row["cost_usd"] == ""
+    assert csv_row["harness_version"] == "0.167.2"
+    assert csv_row["reasoning_effort"] == "high"
+
+
+def test_export_reads_trials_saved_before_harness_columns(tmp_path: Path) -> None:
+    store = JsonResultStore(tmp_path)
+    store.save_manifest(manifest("r1"))
+    payload = trial("r1", "t1", "codex", TrialStatus.PASSED).model_dump(mode="json")
+    for key in ("version", "requested_model", "reasoning_effort"):
+        payload["agent"].pop(key)
+    path = tmp_path / "r1" / "trials" / "t1.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    trials = list(store.iter_trials(ResultFilter(run_id="r1")))
+    row = next(csv.DictReader(io.StringIO(export_trials(trials, "csv"))))
+    assert row["harness"] == "codex"
+    assert row["harness_version"] == ""
+    assert row["requested_model"] == ""
+    assert row["reasoning_effort"] == ""
 
 
 def test_report_and_export_cli(tmp_path: Path) -> None:

@@ -6,6 +6,9 @@ in the workspace. Flags and output formats below were checked against the
 official docs and against the pinned CLI itself (`--help` and its output) on
 2026-11-13. Bumping a version means re-checking this page.
 
+In reports and comparisons the adapter name (`claude`, `codex`, `opencode`) is
+the **harness**, and its pinned CLI version is the **harness version**.
+
 | | Claude Code | Codex CLI | OpenCode |
 | --- | --- | --- | --- |
 | Adapter name | `claude` | `codex` | `opencode` |

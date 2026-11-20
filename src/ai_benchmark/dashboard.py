@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -38,17 +37,21 @@ PAGE = """<!doctype html>
   @media (max-width: 700px) { table { font-size: .85rem; } th, td { padding: .4rem; } }
 </style>
 <h1>AICSBench results</h1>
-<p>Compare passing agent times across stacks or models. Success includes every trial;
+<p>Compare passing agent times across harnesses, stacks or models. Success includes every trial;
   timing excludes rate-limited and failed trials.</p>
 <div class="controls">
   <label>Run <select id="run"></select></label>
   <label>Compare by <select id="by">
     <option value="stack">Stack</option><option value="language">Language</option>
-    <option value="framework">Framework</option><option value="agent_model">Agent + model</option>
+    <option value="framework">Framework</option><option value="harness">Harness</option>
+    <option value="harness_version">Harness version</option>
+    <option value="harness_model">Harness + model</option>
+    <option value="agent_model">Agent + model</option>
     <option value="agent">Agent</option><option value="model">Model</option>
     <option value="task">Task</option>
   </select></label>
   <label>Agent <select id="agent"></select></label>
+  <label>Harness version <select id="harness_version"></select></label>
   <label>Model <select id="model"></select></label>
   <label>Stack <select id="stack"></select></label>
   <label>Task <select id="task"></select></label>
@@ -58,7 +61,7 @@ PAGE = """<!doctype html>
   <th>Mean agent time</th><th>Std dev</th><th>Mean cost</th><th>Confidence</th>
 </tr></thead><tbody id="rows"></tbody></table>
 <script>
-const ids = ['run', 'by', 'agent', 'model', 'stack', 'task'];
+const ids = ['run', 'by', 'agent', 'harness_version', 'model', 'stack', 'task'];
 const el = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
 const message = document.getElementById('message');
 const rows = document.getElementById('rows');
@@ -78,7 +81,7 @@ function option(select, value, label) {
 function fillFilter(id) {
   const select = el[id], previous = select.value;
   select.replaceChildren(); option(select, '', 'All');
-  const values = [...new Set(trials.map(row => row[id]).filter(Boolean))].sort();
+  const values = [...new Set(trials.map(row => filterValue(row, id)).filter(Boolean))].sort();
   values.forEach(value => option(select, value, value));
   if (values.includes(previous)) select.value = previous;
 }
@@ -92,32 +95,41 @@ async function loadTrials() {
       : [];
     if (current !== trialGeneration) return;  // a newer run selection took over
     trials = loaded;
-    ['agent', 'model', 'stack', 'task'].forEach(fillFilter);
+    ['agent', 'harness_version', 'model', 'stack', 'task'].forEach(fillFilter);
     alignFilters();
   } catch (error) {
     if (current !== trialGeneration) return;
     trials = [];  // never show the previous run's rows under a new selection
-    ['agent', 'model', 'stack', 'task'].forEach(fillFilter);
+    ['agent', 'harness_version', 'model', 'stack', 'task'].forEach(fillFilter);
     message.textContent = error.message; message.className = 'error';
     return;
   }
   await update();
 }
+const fixedBy = {
+  stack: ['agent', 'model'], language: ['agent', 'model'], framework: ['agent', 'model'],
+  agent: ['model', 'stack'], harness: ['model', 'stack'],
+  harness_version: ['agent', 'model', 'stack'],
+  model: ['agent', 'stack'],
+  agent_model: ['stack'], harness_model: ['stack'],
+  task: ['agent', 'model', 'stack'],
+};
+const filterValue = (row, id) => id === 'model' ? row.model_key : row[id];
 function alignFilters() {
-  const values = (id, subset = trials) =>
-    [...new Set(subset.map(row => row[id]).filter(Boolean))].sort();
-  const choose = (id, list) => { if (!el[id].value && list.length > 1) el[id].value = list[0]; };
-  if (['stack', 'language', 'framework'].includes(el.by.value)) {
-    choose('agent', values('agent'));
-    choose('model', values('model', trials.filter(row =>
-      !el.agent.value || row.agent === el.agent.value)));
-  } else {
-    const stacks = values('stack');
-    const byCount = stacks.sort((a, b) =>
-      trials.filter(row => row.stack === b).length - trials.filter(row => row.stack === a).length);
-    choose('stack', byCount);
-    if (el.by.value === 'model') choose('agent', values('agent'));
-    if (el.by.value === 'agent') choose('model', values('model'));
+  const needs = fixedBy[el.by.value] || ['stack'];
+  const candidates = el.harness_version.value
+    ? trials.filter(row => row.harness_version === el.harness_version.value)
+    : trials;
+  for (const id of needs) {
+    if (el[id].value) continue;
+    const subset = candidates.filter(row => needs.every(other =>
+      other === id || !el[other].value || filterValue(row, other) === el[other].value));
+    const values = [...new Set(subset.map(row => filterValue(row, id)).filter(Boolean))].sort();
+    if (id === 'stack') {
+      values.sort((a, b) => subset.filter(row => row.stack === b).length -
+                            subset.filter(row => row.stack === a).length);
+    }
+    if (values.length > 1) el[id].value = values[0];
   }
 }
 function cell(row, value) {
@@ -128,7 +140,7 @@ async function update() {
   rows.replaceChildren(); message.textContent = ''; message.className = '';
   if (!el.run.value) { message.textContent = 'No runs found.'; return; }
   const query = new URLSearchParams({run: el.run.value, by: el.by.value});
-  for (const id of ['agent', 'model', 'stack', 'task']) {
+  for (const id of ['agent', 'harness_version', 'model', 'stack', 'task']) {
     if (el[id].value) query.set(id, el[id].value);
   }
   try {
@@ -171,6 +183,7 @@ el.run.addEventListener('change', () => {
 });
 el.by.addEventListener('change', () => {
   ['agent', 'model', 'stack'].forEach(id => { el[id].value = ''; });
+  if (el.by.value === 'harness_version') el.harness_version.value = '';
   alignFilters(); update();
 });
 ids.filter(id => !['run', 'by'].includes(id))
@@ -221,7 +234,14 @@ def dashboard_response(store: JsonResultStore, target: str) -> tuple[int, str, b
             for run in store.list_runs()
         ]
     elif request.path == "/api/trials":
-        data = [trial_row(item) for item in _trials(store, query)]
+        data = [
+            {
+                **trial_row(item),
+                "harness_version": item.agent.version or "unknown",
+                "model_key": item.agent.model_key,
+            }
+            for item in _trials(store, query)
+        ]
     elif request.path == "/api/compare":
         dimension = ComparisonDimension(query.get("by", "stack"))
         groups = compare_trials(_trials(store, query), dimension)
@@ -235,17 +255,18 @@ def _trials(store: JsonResultStore, query: dict[str, str]) -> list[TrialResult]:
     run_id = query.get("run")
     if not run_id:
         raise ValueError("choose a run")
-    trials = list(store.iter_trials(ResultFilter(run_id=run_id)))
-    fields: dict[str, Callable[[TrialResult], str]] = {
-        "agent": lambda item: item.agent.name,
-        "model": lambda item: item.agent.model_label,
-        "stack": lambda item: item.environment.stack,
-        "task": lambda item: item.task_id,
-    }
-    for key, get_value in fields.items():
-        if query.get(key):
-            trials = [item for item in trials if get_value(item) == query[key]]
-    return trials
+    return list(
+        store.iter_trials(
+            ResultFilter(
+                run_id=run_id,
+                agent=query.get("agent"),
+                harness_version=query.get("harness_version"),
+                model_key=query.get("model"),
+                stack=query.get("stack"),
+                task=query.get("task"),
+            )
+        )
+    )
 
 
 def serve_dashboard(results_dir: Path, port: int = 8765) -> None:

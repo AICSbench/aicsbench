@@ -74,6 +74,20 @@ def _split(value: str | None) -> list[str]:
     return [v.strip() for v in (value or "").split(",") if v.strip()]
 
 
+def _dimensions(value: str) -> list[ComparisonDimension]:
+    names = _split(value)
+    if not names:
+        raise ValueError("--by needs at least one dimension")
+    dimensions = []
+    for name in names:
+        try:
+            dimensions.append(ComparisonDimension(name))
+        except ValueError:
+            allowed = ", ".join(item.value for item in ComparisonDimension)
+            raise ValueError(f"unknown --by value {name!r}; choose from {allowed}") from None
+    return dimensions
+
+
 def _fail(message: str, code: int = 1) -> typer.Exit:
     err_console.print(f"[red]error:[/red] {message}")
     return typer.Exit(code)
@@ -123,7 +137,7 @@ def agents(
         AuthMode, typer.Option("--auth", help="Auth mode used by --check.")
     ] = AuthMode.SUBSCRIPTION,
 ) -> None:
-    """List registered coding-agent adapters."""
+    """List registered harnesses (coding-agent adapters)."""
     registry = _ctx(ctx).registry
     names = registry.names()
     if not names:
@@ -382,6 +396,10 @@ def results(
     ctx: typer.Context,
     run_id: Annotated[Optional[str], typer.Option("--run", help="Only this run.")] = None,
     agent: Annotated[Optional[str], typer.Option()] = None,
+    harness_version: Annotated[
+        Optional[str],
+        typer.Option("--harness-version", help="Only this harness (agent CLI) version."),
+    ] = None,
     model: Annotated[Optional[str], typer.Option()] = None,
     stack: Annotated[Optional[str], typer.Option()] = None,
     language: Annotated[Optional[str], typer.Option()] = None,
@@ -400,6 +418,7 @@ def results(
     filters = ResultFilter(
         run_id=run_id,
         agent=agent,
+        harness_version=harness_version,
         model=model,
         stack=stack,
         language=language,
@@ -441,8 +460,13 @@ def results(
 def compare(
     ctx: typer.Context,
     by: Annotated[
-        ComparisonDimension, typer.Option("--by", help="Dimension to compare.")
-    ] = ComparisonDimension.STACK,
+        str,
+        typer.Option(
+            "--by",
+            help="Comma-separated dimensions, e.g. stack or stack,model. "
+            "Harness is the agent CLI (claude, codex, opencode).",
+        ),
+    ] = "stack",
     run_id: Annotated[Optional[str], typer.Option("--run")] = None,
     agent: Annotated[Optional[str], typer.Option()] = None,
     model: Annotated[Optional[str], typer.Option()] = None,
@@ -459,13 +483,17 @@ def compare(
         tooling_mode=mode, auth_mode=auth,
     )
     try:
-        rows = compare_trials(list(store.iter_trials(filters)), by, min_trials)
+        dimensions = _dimensions(by)
+        rows = compare_trials(list(store.iter_trials(filters)), dimensions, min_trials)
     except (BenchmarkError, ValueError) as exc:
         raise _fail(str(exc)) from None
     if not rows:
         console.print("No results match.")
         return
-    table = Table(by.value, "pass", "limits", "timed", "mean", "sd", "cost", "cost n", "conf")
+    table = Table(
+        " + ".join(dimension.value for dimension in dimensions),
+        "pass", "limits", "timed", "mean", "sd", "cost", "cost n", "conf",
+    )
     for row in rows:
         table.add_row(
             row.value,
@@ -507,7 +535,10 @@ def report(
     ctx: typer.Context,
     run_id: Annotated[Optional[str], typer.Option("--run")] = None,
     fmt: Annotated[str, typer.Option("--format", help="markdown, json or csv.")] = "markdown",
-    by: Annotated[ComparisonDimension, typer.Option("--by")] = ComparisonDimension.STACK,
+    by: Annotated[
+        ComparisonDimension,
+        typer.Option("--by", help="Dimension to compare. Harness is the agent CLI."),
+    ] = ComparisonDimension.STACK,
     agent: Annotated[Optional[str], typer.Option()] = None,
     model: Annotated[Optional[str], typer.Option()] = None,
     stack: Annotated[Optional[str], typer.Option()] = None,
