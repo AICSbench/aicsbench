@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "run_id": "run-fixture-001",
+  "task_id": "task-management-api",
+  "task_version": "2",
+  "submitted_at": "2026-11-17T08:00:00Z",
+  "submitter": {
+    "name": "Fixture Submitter",
+    "github": null
+  },
+  "notes": "Test fixture: generated from the fake orchestrator output format.",
+  "platform_version": "0.1.0",
+  "platform_git_commit": "3547a18",
+  "acceptance_suite_sha256": "bdb9517ac7138804403bef6c0ea36941de29d5cb1fb51a33448f6360c556d20b",
+  "suite_hash_source": "run",
+  "logs_included": false,
+  "files": {
+    "manifest.json": "d9b4127acb20413cf98ad68515bcc11cc42a574fe8e40e94222a68f03115f84b",
+    "trials/trial-001.json": "9f8c57ab3960e219549879328ee60a54b28c05951ca94a041617c1dc2746d2fc",
+    "trials/trial-002.json": "65cff45ca9e1be9673bb39361e614ee40108cbbf766f05c650b83af244a17c1c"
+  }
+}

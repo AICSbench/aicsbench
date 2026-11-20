@@ -1,0 +1,198 @@
+{
+  "trial_id": "trial-001",
+  "run_id": "run-fixture-001",
+  "task_id": "task-management-api",
+  "task_version": "2",
+  "trial_index": 0,
+  "execution_order": 0,
+  "max_repairs": 0,
+  "max_parallel": 1,
+  "status": "passed",
+  "agent": {
+    "name": "codex",
+    "version": "0.167.2",
+    "requested_model": "gpt-6-luna",
+    "reported_model": {
+      "value": null,
+      "availability": "unavailable",
+      "source": null,
+      "unit": null,
+      "note": null
+    },
+    "reasoning_effort": "medium",
+    "auth_mode": "subscription",
+    "resolved_model": "gpt-6-luna"
+  },
+  "environment": {
+    "stack": "fastapi",
+    "language": "python",
+    "language_version": "3.13",
+    "framework": "fastapi",
+    "framework_version": "0.129",
+    "image_ref": "bench/fastapi:0.129",
+    "image_digest": null,
+    "agent_image_ref": null,
+    "services": [
+      "postgres:17"
+    ]
+  },
+  "tooling": {
+    "mode": "standard",
+    "enabled_tools": [],
+    "mcp_servers": []
+  },
+  "started_at": "2026-11-17T07:00:00Z",
+  "finished_at": "2026-11-17T07:19:32Z",
+  "metrics": {
+    "performance": {
+      "agent_execution_seconds": {
+        "value": 612.4,
+        "availability": "available",
+        "source": "measured",
+        "unit": "s",
+        "note": null
+      },
+      "time_to_first_implementation_seconds": {
+        "value": null,
+        "availability": "unavailable",
+        "source": null,
+        "unit": "s",
+        "note": null
+      },
+      "time_to_all_tests_pass_seconds": {
+        "value": null,
+        "availability": "unavailable",
+        "source": null,
+        "unit": "s",
+        "note": null
+      },
+      "total_wall_clock_seconds": {
+        "value": 1198.0,
+        "availability": "available",
+        "source": "measured",
+        "unit": "s",
+        "note": null
+      }
+    },
+    "usage": {
+      "tokens": {
+        "accounting_scheme": "openai",
+        "input_tokens": {
+          "value": 145320,
+          "availability": "available",
+          "source": "agent_reported",
+          "unit": "tokens",
+          "note": null
+        },
+        "output_tokens": {
+          "value": 42118,
+          "availability": "available",
+          "source": "agent_reported",
+          "unit": "tokens",
+          "note": null
+        },
+        "cached_input_tokens": {
+          "value": null,
+          "availability": "unavailable",
+          "source": null,
+          "unit": "tokens",
+          "note": null
+        },
+        "reasoning_tokens": {
+          "value": null,
+          "availability": "unavailable",
+          "source": null,
+          "unit": "tokens",
+          "note": null
+        },
+        "total_tokens": {
+          "value": 187438,
+          "availability": "available",
+          "source": "agent_reported",
+          "unit": "tokens",
+          "note": null
+        }
+      },
+      "cost": {
+        "value": null,
+        "availability": "unavailable",
+        "source": null,
+        "unit": "USD",
+        "note": "subscription run; cost not billed"
+      },
+      "turns": {
+        "value": null,
+        "availability": "unavailable",
+        "source": null,
+        "unit": null,
+        "note": null
+      }
+    },
+    "quality": {
+      "tests_passed": {
+        "value": 26,
+        "availability": "available",
+        "source": "measured",
+        "unit": null,
+        "note": null
+      },
+      "tests_failed": {
+        "value": 0,
+        "availability": "available",
+        "source": "measured",
+        "unit": null,
+        "note": null
+      },
+      "tests_total": {
+        "value": 26,
+        "availability": "available",
+        "source": "measured",
+        "unit": null,
+        "note": null
+      },
+      "repair_iterations": {
+        "value": null,
+        "availability": "unavailable",
+        "source": null,
+        "unit": null,
+        "note": null
+      },
+      "retry_count": {
+        "value": null,
+        "availability": "unavailable",
+        "source": null,
+        "unit": null,
+        "note": null
+      },
+      "manual_intervention_count": {
+        "value": 0,
+        "availability": "available",
+        "source": "measured",
+        "unit": null,
+        "note": null
+      }
+    },
+    "code": {
+      "lines_of_code": {
+        "value": null,
+        "availability": "unavailable",
+        "source": null,
+        "unit": null,
+        "note": null
+      },
+      "files_changed": {
+        "value": null,
+        "availability": "unavailable",
+        "source": null,
+        "unit": null,
+        "note": null
+      }
+    },
+    "provider_specific": {}
+  },
+  "workspace_git_commit": "ffffffffffffffffffffffffffffffffffffffff",
+  "rate_limit_events": [],
+  "log_files": {},
+  "error": null,
+  "raw": {}
+}

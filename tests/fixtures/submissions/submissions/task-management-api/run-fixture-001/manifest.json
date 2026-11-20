@@ -1,0 +1,98 @@
+{
+  "run_id": "run-fixture-001",
+  "created_at": "2026-11-17T06:45:00Z",
+  "platform_version": "0.1.0",
+  "platform_git_commit": "3547a18",
+  "seed": 7,
+  "auth_mode": "subscription",
+  "experiment": {
+    "agents": [
+      {
+        "agent": "codex",
+        "model": "gpt-6-luna"
+      }
+    ],
+    "task": "task-management-api",
+    "stacks": [
+      "fastapi"
+    ],
+    "trials": 2,
+    "auth": "subscription"
+  },
+  "task_snapshot": {
+    "id": "task-management-api",
+    "name": "Task Management REST API",
+    "version": "2",
+    "description": "Build a JSON REST API for managing projects and the tasks inside them, persisted in the provided relational database.",
+    "functional_requirements": [
+      "A project has: id (integer, assigned by the server), name (string, required, 1 to 200 characters) and description (string or null, optional).",
+      "A task has: id (integer, assigned by the server), project_id (integer), title (string, required, 1 to 200 characters), description (string or null, optional), status (one of todo, in_progress, done; defaults to todo) and due_date (date as YYYY-MM-DD, or null; optional).",
+      "Every response body is JSON. Optional fields that were not set are returned as null.",
+      "POST /projects creates a project and returns 201 with the project. GET /projects lists projects. GET /projects/{project_id} returns 200 with one project. PATCH /projects/{project_id} updates only the fields given and returns 200 with the updated project. DELETE /projects/{project_id} deletes the project and all its tasks and returns 204 with an empty body.",
+      "POST /projects/{project_id}/tasks creates a task in that project and returns 201 with the task. GET /projects/{project_id}/tasks lists that project's tasks. GET, PATCH and DELETE /projects/{project_id}/tasks/{task_id} behave like their project counterparts (200, 200, 204).",
+      "List endpoints return 200 with {\"items\": [...], \"page\": <int>, \"per_page\": <int>, \"total\": <int>}, where total counts all matching records across pages. Items are ordered by id, ascending.",
+      "List endpoints accept the query parameters page (integer, at least 1, default 1) and per_page (integer, 1 to 100, default 20). A page past the end returns an empty items list.",
+      "GET /projects/{project_id}/tasks also accepts status (todo, in_progress or done) and then returns only tasks with that status; total counts only those.",
+      "Invalid input returns 422 with {\"errors\": {\"<field>\": [\"<message>\", ...], ...}}, naming every invalid field. This covers missing required fields, wrong types, empty or too long strings, an unknown status, a malformed due_date and out-of-range page, per_page or status query parameters.",
+      "A project or task that does not exist returns 404 with a JSON object body. A task id that exists but belongs to a different project also returns 404."
+    ],
+    "technical_requirements": [
+      "Use the framework's idiomatic project layout and its ORM and migrations.",
+      "Read database settings from the environment variables described below; do not hard-code them.",
+      "Provide an executable start.sh in the project root. Run from the project root with sh start.sh, it must apply pending migrations and then serve the API in the foreground on 0.0.0.0:8000. It must work offline: install dependencies while you work, not in start.sh.",
+      "Data must survive a restart of the server; the database may already contain records from earlier runs.",
+      "Include a README section explaining how to start the server."
+    ],
+    "initial_state": {
+      "mode": "build_from_scratch",
+      "template": null
+    },
+    "prompt_template": "You are implementing \"$task_name\" using $framework $framework_version on\n$language $language_version. The project lives in the current directory\n($workdir), which may contain a stack-provided starter project.\n\n$description\n\nFunctional requirements:\n$functional_requirements\n\nTechnical requirements:\n$technical_requirements\n\nEnvironment:\n$environment_notes\n\nWhen you are done, the API will be started with `sh start.sh` and checked by\nan automated HTTP test suite against exactly the requirements above.\nWork autonomously until the implementation is complete. Do not ask questions.",
+    "supported_stacks": [
+      "fastapi",
+      "fastapi-latest",
+      "laravel",
+      "laravel13-boost",
+      "express",
+      "express-latest"
+    ],
+    "acceptance_tests": {
+      "suite": "acceptance",
+      "image": null,
+      "command": [
+        "pytest",
+        "-q",
+        "/acceptance",
+        "--junitxml=/results/junit.xml"
+      ],
+      "results_file": "junit.xml",
+      "completed_exit_codes": [
+        0,
+        1
+      ],
+      "app_start_command": [
+        "sh",
+        "start.sh"
+      ],
+      "app_port": 8000,
+      "result_format": "junit"
+    },
+    "timeouts": {
+      "setup_seconds": 600,
+      "agent_seconds": 1800,
+      "tests_seconds": 600
+    },
+    "default_trials": 3,
+    "extension_phases": []
+  },
+  "trial_ids": [
+    "trial-001",
+    "trial-002"
+  ],
+  "host": {
+    "platform": "macOS 26.1",
+    "python": "3.13.7",
+    "machine": "arm64"
+  },
+  "acceptance_suite_sha256": "bdb9517ac7138804403bef6c0ea36941de29d5cb1fb51a33448f6360c556d20b"
+}

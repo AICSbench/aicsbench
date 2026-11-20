@@ -66,6 +66,7 @@ from ai_benchmark.orchestrator.policy import apply_auth_policy
 from ai_benchmark.orchestrator.timing import Stopwatch, utcnow
 from ai_benchmark.progress import AgentHeartbeat, format_duration
 from ai_benchmark.storage.base import ResultStore
+from ai_benchmark.submission.suite import suite_sha256
 
 log = logging.getLogger(__name__)
 
@@ -296,6 +297,7 @@ class BenchmarkOrchestrator:
                 "python": platform.python_version(),
                 "machine": platform.machine(),
             },
+            acceptance_suite_sha256=suite_sha256(task),
         )
 
     def _skeleton(

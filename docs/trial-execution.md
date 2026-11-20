@@ -134,3 +134,19 @@ equivalent to `benchmarks/stacks/fastapi/Dockerfile`) and
   create what each test needs and never assume an empty table.
 - Change the suite and the task's requirements together and bump the task's
   `version`, so results from different suites are never compared.
+
+## Validating a submission bundle
+
+A finished run is packed into a submission bundle by `aicsbench submit` and
+validated with the same code by the data repository's CI:
+
+```bash
+aicsbench validate-submission submissions/<task_id>/<run_id> [--against DIR]
+```
+
+The bundle layout, the validation rules (layout, schema, hashes, ids, task,
+suite, comparable, harness, status, secret, duplicate) and both modes
+(admission vs rebuild) are specified in
+[phase-5/schemas.md](phase-5/schemas.md#validation-rules). The suite rule
+enforces what "Writing an acceptance suite" says above: the hash recorded at
+run time must match the bundle, and in admission mode the catalog's suite.
