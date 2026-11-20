@@ -145,7 +145,7 @@ class BenchmarkOrchestrator:
                 if mode not in adapter.capabilities().supported_auth_modes:
                     issues.append(error(f"does not support auth mode '{mode.value}'"))
                     continue
-                auth = auth or adapter.default_auth(mode)
+                auth = self.resolve_auth(selection, mode)
             if auth is not None:
                 issues.extend(error(problem) for problem in auth.missing())
         defaults = sorted(k for k, s in selections.items() if s.model is None)
@@ -170,10 +170,22 @@ class BenchmarkOrchestrator:
         return issues
 
     def resolve_auth(self, selection: AgentSelection, mode: AuthMode) -> AgentAuthConfig:
-        """The selection's explicit auth, else the adapter's default for ``mode``."""
+        """The selection's explicit auth, else the adapter's default for ``mode``.
+
+        A custom endpoint's gateway credential is added on top: it replaces the
+        adapter's provider default (Claude Code must not receive
+        ``ANTHROPIC_API_KEY`` next to a gateway token) and is merged with an
+        explicit auth when the user gave one.
+        """
+        adapter = self.registry.create(selection.agent, selection.options)
+        if selection.endpoint is not None:
+            auth = adapter.endpoint_auth(selection.endpoint)
+            if selection.auth is not None:
+                auth = selection.auth.merged_with(auth)
+            return auth
         if selection.auth is not None:
             return selection.auth
-        return self.registry.create(selection.agent, selection.options).default_auth(mode)
+        return adapter.default_auth(mode)
 
     def check_agent(self, adapter: AgentAdapter, runner: CommandRunner) -> AgentAvailability:
         """Run the adapter's availability check inside its agent image."""
@@ -321,6 +333,14 @@ class BenchmarkOrchestrator:
                 requested_model=trial.agent.model,
                 reasoning_effort=trial.agent.reasoning_effort,
                 auth_mode=plan.auth_mode,
+                provider=(
+                    trial.agent.endpoint.provider
+                    if trial.agent.endpoint is not None
+                    else AgentRecord.default_provider(trial.agent.agent, trial.agent.model)
+                ),
+                endpoint_host=(
+                    trial.agent.endpoint.host if trial.agent.endpoint is not None else None
+                ),
                 resolved_model=trial.agent.model,
             ),
             environment=EnvironmentRecord(
@@ -414,6 +434,7 @@ class BenchmarkOrchestrator:
                     model=trial.agent.model,
                     reasoning_effort=trial.agent.reasoning_effort,
                     tooling=config.tooling,
+                    endpoint=trial.agent.endpoint,
                     options=trial.agent.options,
                 )
                 _phase(
@@ -483,7 +504,11 @@ class BenchmarkOrchestrator:
         result.metrics.performance.total_wall_clock_seconds = Metric[float].of(
             wall.stop(), MetricSource.MEASURED, unit="s"
         )
-        result.metrics = apply_auth_policy(result.metrics, plan.auth_mode)
+        result.metrics = apply_auth_policy(
+            result.metrics,
+            plan.auth_mode,
+            custom_endpoint=trial.agent.endpoint is not None,
+        )
         _phase(
             trial.trial_id,
             f"{result.status.value} in "

@@ -35,11 +35,13 @@ def test_flat_export_keeps_unavailable_metrics_null() -> None:
     assert row["input_tokens"] is None
     assert (row["harness"], row["harness_version"]) == ("codex", "0.167.2")
     assert (row["requested_model"], row["reasoning_effort"]) == ("gpt-6-luna", "high")
-    assert list(row)[-4:] == [
+    assert list(row)[-6:] == [
         "harness",
         "harness_version",
         "requested_model",
         "reasoning_effort",
+        "provider",
+        "endpoint_host",
     ]
     csv_row = next(csv.DictReader(io.StringIO(export_trials([item], "csv"))))
     assert csv_row["agent_seconds"] == "7.5" and csv_row["cost_usd"] == ""

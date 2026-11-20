@@ -13,6 +13,9 @@ from ai_benchmark.models.metrics import Metric, TrialMetrics
 _PROVIDER_MODEL_HARNESSES = frozenset({"opencode"})
 """Harnesses whose model IDs are ``provider/model``; their labels drop the provider."""
 
+_HARNESS_PROVIDERS = {"claude": "anthropic", "codex": "openai"}
+"""The provider a harness uses directly; a configured endpoint overrides it (task 9)."""
+
 
 class AgentRecord(BaseModel):
     """Which agent ran, as observed at run time."""
@@ -25,6 +28,16 @@ class AgentRecord(BaseModel):
     reported_model: Metric[str] = Field(default_factory=Metric[str])
     reasoning_effort: str | None = None
     auth_mode: AuthMode
+    provider: str | None = Field(
+        default=None,
+        description="The model provider or gateway the harness ran against. None only "
+        "for trials recorded before provider tracking (task 9).",
+    )
+    endpoint_host: str | None = Field(
+        default=None,
+        description="Host of the trial's custom endpoint base URL, scheme and path "
+        "stripped. None for a direct run.",
+    )
     resolved_model: str | None = Field(
         default=None,
         description="The model used for comparisons: reported model if available, "
@@ -36,6 +49,21 @@ class AgentRecord(BaseModel):
         if reported.is_available and reported.value:
             return reported.value
         return requested
+
+    @staticmethod
+    def default_provider(name: str, model: str | None) -> str | None:
+        """The provider a direct run used: the harness's vendor, or the model's prefix.
+
+        OpenCode's model IDs are ``provider/model``, so its provider comes from
+        the prefix. None when it cannot be told (e.g. OpenCode without a model).
+        """
+        if name in _HARNESS_PROVIDERS:
+            return _HARNESS_PROVIDERS[name]
+        if name in _PROVIDER_MODEL_HARNESSES and model:
+            provider, separator, rest = model.partition("/")
+            if provider and separator and rest:
+                return provider
+        return None
 
     @property
     def model_label(self) -> str:
@@ -149,6 +177,7 @@ class TrialResult(BaseModel):
             ComparisonDimension.HARNESS_VERSION: (
                 f"{self.agent.name} {self.agent.version or 'unknown'}"
             ),
+            ComparisonDimension.PROVIDER: self.agent.provider or "unknown",
             ComparisonDimension.STACK: self.environment.stack,
             ComparisonDimension.LANGUAGE: self.environment.language,
             ComparisonDimension.FRAMEWORK: self.environment.framework,

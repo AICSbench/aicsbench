@@ -44,6 +44,7 @@ def test_dashboard_serves_harness_version_comparison_and_filter(tmp_path: Path) 
     for index, version in enumerate(["0.167.2", "0.167.1", None]):
         item = trial("r1", f"t{index}", "codex", TrialStatus.PASSED)
         item.agent.version = version
+        item.agent.provider = "openai"
         item.agent.resolved_model = "gpt-6-luna"
         store.save_trial(item)
 
@@ -76,8 +77,10 @@ def test_dashboard_model_filter_matches_model_key_across_harnesses(tmp_path: Pat
     store.save_manifest(manifest("r1"))
     codex = trial("r1", "t1", "codex", TrialStatus.PASSED)
     codex.agent.resolved_model = "gpt-6-luna"
+    codex.agent.provider = "openai"
     opencode = trial("r1", "t2", "opencode", TrialStatus.PASSED)
     opencode.agent.resolved_model = "openai/gpt-6-luna"
+    opencode.agent.provider = "openai"
     store.save_trial(codex)
     store.save_trial(opencode)
 
@@ -95,8 +98,10 @@ def test_dashboard_model_selector_filters_by_key_only(tmp_path: Path) -> None:
     store.save_manifest(manifest("r1"))
     codex = trial("r1", "t1", "codex", TrialStatus.PASSED)
     codex.agent.resolved_model = "openai/gpt-6-luna"
+    codex.agent.provider = "openai"
     opencode = trial("r1", "t2", "opencode", TrialStatus.PASSED)
     opencode.agent.resolved_model = "openai/gpt-6-luna"
+    opencode.agent.provider = "openai"
     store.save_trial(codex)
     store.save_trial(opencode)
 

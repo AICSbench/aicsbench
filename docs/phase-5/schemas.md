@@ -119,7 +119,7 @@ Two modes:
 | Code | Rule |
 | --- | --- |
 | `layout` | Folder matches `submissions/<task_id>/<run_id>/`, required files present, no other files. |
-| `schema` | `submission.json`, `manifest.json` and every trial parse with their pydantic models. |
+| `schema` | `submission.json`, `manifest.json` and every trial parse with their pydantic models. Each trial's `endpoint_host`, when present, is an allowlisted public gateway host (`openrouter.ai`, `api.anthropic.com`, `api.openai.com`) or the literal `custom` — `submit` replaces a private gateway address with `custom` so the address is never published (task 9). |
 | `hash` | Every file's SHA-256 matches `files`; no file missing from or extra to `files`. |
 | `ids` | `run_id`, `task_id`, `task_version` agree across folder names, `submission.json`, manifest and trials; the manifest's `trial_ids` equal the trial files. |
 | `task` | (admission only) The task ID and version exist in the catalog the validator runs with. |
@@ -174,6 +174,8 @@ keys, all added to `trial_row` itself so CSV/JSONL exports get them too:
 | `harness_version` | `agent.version`; task 1 |
 | `requested_model` | `agent.requested_model`; task 1 |
 | `reasoning_effort` | `agent.reasoning_effort`; task 1 |
+| `provider` | `agent.provider`, the model provider or gateway slug (`unknown` when not recorded); task 9 |
+| `endpoint_host` | `agent.endpoint_host`, the custom endpoint's base-URL host (`custom` when submit hid a private gateway address); task 9 |
 | `language_version_installed` | `environment.installed_versions["language"]` (task 7; the existing `language_version` key stays the version the stack declares) |
 | `framework_version_installed` | `environment.installed_versions["framework"]` (task 7; the existing `framework_version` key stays the version the stack declares) |
 

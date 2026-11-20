@@ -36,6 +36,12 @@ M = TypeVar("M", bound=BaseModel)
 LOG_TOTAL_LIMIT_BYTES = 50 * 1024 * 1024
 """Maximum uncompressed size of one log archive, per docs/phase-5/schemas.md."""
 
+PUBLIC_ENDPOINT_HOSTS = frozenset({"openrouter.ai", "api.anthropic.com", "api.openai.com"})
+"""Gateway hosts whose address may be published (docs/phase-5/schemas.md)."""
+
+CUSTOM_ENDPOINT_HOST = "custom"
+"""What ``submit`` writes for a private gateway host, so its address is never published."""
+
 
 def validate_bundle(
     path: Path | str,
@@ -63,6 +69,7 @@ def validate_bundle(
         )
     _check_comparable(trials, problems)
     _check_harness(trials, problems)
+    _check_endpoint_host(trials, problems)
     _check_status(trials, problems)
     _check_secrets(bundle, submission, problems)
     _check_duplicate(bundle, manifest, against, problems)
@@ -289,6 +296,24 @@ def _check_harness(trials: dict[str, TrialResult], problems: list[Problem]) -> N
                     f"missing {', '.join(missing)}; public trials need a harness version",
                 )
             )
+
+
+def _check_endpoint_host(trials: dict[str, TrialResult], problems: list[Problem]) -> None:
+    """A private gateway address must never be published; submit replaces it with 'custom'."""
+    allowed = ", ".join(sorted(PUBLIC_ENDPOINT_HOSTS))
+    for trial in sorted(trials.values(), key=lambda item: item.trial_id):
+        host = trial.agent.endpoint_host
+        if host is None or host == CUSTOM_ENDPOINT_HOST or host in PUBLIC_ENDPOINT_HOSTS:
+            continue
+        problems.append(
+            Problem(
+                "schema",
+                f"trials/{trial.trial_id}.json",
+                f"endpoint_host '{host}' is not an allowlisted public gateway host "
+                f"({allowed}) or '{CUSTOM_ENDPOINT_HOST}'; submit replaces a private "
+                "gateway address with 'custom'",
+            )
+        )
 
 
 def _check_status(trials: dict[str, TrialResult], problems: list[Problem]) -> None:

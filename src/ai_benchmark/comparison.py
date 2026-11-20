@@ -12,6 +12,19 @@ from ai_benchmark.models.results import TrialResult
 _HARNESS_VERSION_REFUSAL = (
     "harness version comparison mixes harnesses, models or stacks; filter to one of each"
 )
+_PROVIDER_REFUSAL = "harness comparison mixes providers; filter to one provider"
+_UNKNOWN_PROVIDER_REFUSAL = (
+    "harness comparison needs a recorded provider; exclude trials recorded before provider tracking"
+)
+
+# The harness dimensions hold every axis fixed, including the provider (task 9).
+_HARNESS_DIMENSIONS = frozenset(
+    {
+        ComparisonDimension.AGENT,
+        ComparisonDimension.HARNESS,
+        ComparisonDimension.HARNESS_VERSION,
+    }
+)
 
 # The axes a row must hold fixed. A dimension that does not cover an axis leaves
 # it to vary, so the selection must already have one value for it.
@@ -21,6 +34,7 @@ _COVERAGE: dict[ComparisonDimension, frozenset[str]] = {
     ComparisonDimension.HARNESS_VERSION: frozenset({"harness"}),
     ComparisonDimension.MODEL: frozenset({"model"}),
     ComparisonDimension.AGENT_MODEL: frozenset({"harness", "model"}),
+    ComparisonDimension.PROVIDER: frozenset(),
     ComparisonDimension.STACK: frozenset({"stack"}),
     ComparisonDimension.LANGUAGE: frozenset({"stack"}),
     ComparisonDimension.FRAMEWORK: frozenset({"stack"}),
@@ -95,10 +109,20 @@ def _check_values(dimensions: tuple[ComparisonDimension, ...], trials: list[Tria
     harnesses = {trial.agent.name for trial in trials}
     models = {trial.agent.model_key for trial in trials}
     stacks = {trial.environment.stack for trial in trials}
-    if dimensions == (ComparisonDimension.HARNESS_VERSION,) and (
+    providers = {trial.agent.provider for trial in trials}
+    if dimensions in ((ComparisonDimension.HARNESS_VERSION,), (ComparisonDimension.PROVIDER,)) and (
         len(harnesses) > 1 or len(models) > 1 or len(stacks) > 1
     ):
         raise ValueError(_HARNESS_VERSION_REFUSAL)
+    if _HARNESS_DIMENSIONS.intersection(dimensions):
+        # A harness run's provider must be recorded and single: a Codex run
+        # against OpenAI directly is never ranked against a Claude Code run
+        # through OpenRouter, and two unknown-provider trials may have used
+        # different gateways.
+        if None in providers:
+            raise ValueError(_UNKNOWN_PROVIDER_REFUSAL)
+        if len(providers) > 1:
+            raise ValueError(_PROVIDER_REFUSAL)
     covered = {axis for dimension in dimensions for axis in _COVERAGE[dimension]}
     mixed = [
         axis
