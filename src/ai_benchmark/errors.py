@@ -35,3 +35,7 @@ class ResultStoreError(BenchmarkError):
 
 class PlanningError(BenchmarkError):
     """An experiment configuration cannot be expanded into a valid plan."""
+
+
+class SubmissionError(BenchmarkError):
+    """A run cannot be packed into a bundle or sent to the data repository."""
