@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import subprocess
 import tarfile
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ import ai_benchmark.cli.app as cli
 from ai_benchmark.models.enums import TrialStatus
 from ai_benchmark.models.results import RunManifest, TrialResult
 from ai_benchmark.storage.json_store import JsonResultStore
+from ai_benchmark.submission.github import GitHub
 
 from .test_submission import DIRS, FIXTURE_BUNDLE
 
@@ -438,3 +440,48 @@ def test_private_endpoint_host_is_published_as_custom(
                 assert host not in file.read_text(), file
     # results/ is never edited.
     assert {p: p.read_bytes() for p in (env["results"] / RUN_ID).rglob("*.json")} == stored
+
+
+def test_changed_paths_reports_files_moved_into_the_bundle(tmp_path: Path) -> None:
+    """Real local git, no network: a rename out of upstream is not hidden."""
+
+    def git(cwd: Path, *args: str) -> None:
+        subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+        )
+
+    upstream = tmp_path / "upstream.git"
+    git(tmp_path, "init", "--bare", "-b", "main", str(upstream))
+    seed = tmp_path / "seed"
+    git(tmp_path, "clone", str(upstream), str(seed))
+    (seed / "verified-runs.txt").write_text("run-a\nrun-b\n")
+    git(seed, "add", "-A")
+    git(seed, "commit", "-m", "init")
+    git(seed, "push", "origin", "main")
+    fork = tmp_path / "fork.git"
+    git(tmp_path, "clone", "--bare", str(upstream), str(fork))
+
+    work = tmp_path / "work"
+    git(tmp_path, "clone", fork.as_uri(), str(work))
+    git(work, "checkout", "-b", f"submit/{RUN_ID}")
+    bundle = work / "submissions" / TASK_ID / RUN_ID
+    bundle.mkdir(parents=True)
+    git(work, "mv", "verified-runs.txt", str(bundle / "verified-runs.txt"))
+    git(work, "commit", "-m", "moved")
+    git(work, "push", "origin", f"submit/{RUN_ID}")
+
+    class LocalGitHub(GitHub):
+        def repo_url(self, repo: str) -> str:
+            return upstream.as_uri()
+
+    clone = tmp_path / "clone"
+    git(tmp_path, "clone", "--depth", "1", fork.as_uri(), str(clone))
+    github = LocalGitHub()
+    github.checkout_remote_branch(clone, f"submit/{RUN_ID}")
+    assert sorted(github.changed_paths(clone, "aicsbench/data")) == [
+        f"submissions/{TASK_ID}/{RUN_ID}/verified-runs.txt",
+        "verified-runs.txt",
+    ]

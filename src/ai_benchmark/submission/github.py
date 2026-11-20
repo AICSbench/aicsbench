@@ -74,14 +74,17 @@ class GitHub:
         """Every path the checked-out branch changes in a PR to ``base_repo``.
 
         Like GitHub's PR diff: against the merge base with the base repository's
-        default branch, so earlier commits on the branch count too.
+        default branch, so earlier commits on the branch count too. Renames are
+        reported as a deletion plus an addition, so moving a file into the
+        bundle still shows the path it was moved from.
         """
         self._run(
             ["git", "fetch", "--quiet", self.repo_url(base_repo), "+HEAD:refs/aicsbench/base"],
             cwd=repo_dir,
         )
         return self._run(
-            ["git", "diff", "--name-only", "refs/aicsbench/base...HEAD"], cwd=repo_dir
+            ["git", "diff", "--name-only", "--no-renames", "refs/aicsbench/base...HEAD"],
+            cwd=repo_dir,
         ).splitlines()
 
     def repo_url(self, repo: str) -> str:
