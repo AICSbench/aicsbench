@@ -677,19 +677,25 @@ def test_log_archive_tolerates_oversized_json_integer(
 def test_log_archive_scans_json_member_with_oversized_integer(
     catalog: SpecCatalog, tmp_path: Path
 ) -> None:
-    # An escaped key plus an oversized integer must still reach the key scan:
-    # the member parses (parse_int bypasses the digit limit) instead of being
-    # dropped as unparseable.
+    # The .json member is multiline so each single line fails the JSONL parse
+    # and only the complete-document parse can decode and scan it; the .log
+    # member is single-line so only the JSONL parse sees it. Neither raw text
+    # contains the literal key (it is \u005f-escaped), so detection proves the
+    # decoded document reached find_secrets.
+    escaped = '"access\u005ftoken": "sk-live-abcd1234", "n": ' + "9" * 5000
+    newline = chr(10)
+    multiline = "{" + newline + escaped + newline + "}"
     bundle = _log_bundle(catalog, tmp_path)
-    _add_log(
-        bundle,
-        "trial-001",
-        '{"access\\u005ftoken": "sk-live-abcd1234", "n": ' + "9" * 5000 + "}",
-        member="output.json",
-    )
+    _add_log(bundle, "trial-001", multiline, member="output.json")
+    _add_log(bundle, "trial-002", "{" + escaped + "}", member="agent.stdout.log")
     problems = validate_bundle(bundle, catalog)
-    assert [p.code for p in problems] == ["secret"]
-    assert "access_token" in problems[0].message
+    assert [p.code for p in problems] == ["secret", "secret"]
+    json_problem = next(p for p in problems if "output.json" in p.path)
+    log_problem = next(p for p in problems if "agent.stdout.log" in p.path)
+    # The complete-document path reports the decoded key; the JSONL path
+    # reports the line that parsed.
+    assert "access_token" in json_problem.message
+    assert "line 1" in log_problem.message
 
 
 def test_log_archive_rejects_member_over_limit(
