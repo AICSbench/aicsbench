@@ -1,6 +1,6 @@
 {
   "runs": 2,
-  "trials": 5,
+  "trials": 7,
   "tasks": [
     {
       "id": "task-management-api",

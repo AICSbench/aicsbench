@@ -15,7 +15,9 @@
   "trial_ids": [
     "trial-001",
     "trial-002",
-    "trial-003"
+    "trial-003",
+    "trial-004",
+    "trial-005"
   ],
   "host": {},
   "acceptance_suite_sha256": "bdb9517ac7138804403bef6c0ea36941de29d5cb1fb51a33448f6360c556d20b"

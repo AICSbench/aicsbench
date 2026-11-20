@@ -156,7 +156,12 @@ def write_bundle(
 
 
 def write_fixture_data(data: Path) -> None:
-    """Two bundles: one verified, one community; two harnesses; two stacks."""
+    """Two bundles: one verified, one community; two harnesses; two stacks.
+
+    The verified run holds Codex + GPT (OpenAI) and Claude Code + Opus
+    (Anthropic) on one stack, so every harness + model leaderboard mixes
+    providers across its rows.
+    """
     if data.exists():
         shutil.rmtree(data)
     data.mkdir(parents=True)
@@ -167,6 +172,24 @@ def write_fixture_data(data: Path) -> None:
             make_trial("run-verified-001", 1, seconds=600.0),
             make_trial("run-verified-001", 2, seconds=660.0),
             make_trial("run-verified-001", 3, status=TrialStatus.FAILED, seconds=900.0),
+            # The same run also has Claude Code + Opus on the same stack, so the
+            # harness + model leaderboards rank two providers' packages.
+            make_trial(
+                "run-verified-001",
+                4,
+                harness="claude",
+                harness_version="2.1.323",
+                model="claude-opus-5-5",
+                seconds=480.0,
+            ),
+            make_trial(
+                "run-verified-001",
+                5,
+                harness="claude",
+                harness_version="2.1.323",
+                model="claude-opus-5-5",
+                seconds=540.0,
+            ),
         ],
         submitter="Verified Submitter",
         github="verified-submitter",

@@ -285,5 +285,8 @@ Leaderboard rows use `comparison.compare_trials`, which refuses a
 comparison that leaves another dimension mixed (for example comparing stacks
 across several harness + model pairs). Pages therefore split each leaderboard
 by the dimensions it must hold fixed, as the "per ..." wording above says.
+A harness + model leaderboard ranks whole packages, so its rows may use
+different providers (Claude Code + Opus on Anthropic, Codex + GPT on OpenAI);
+each row holds one recorded provider (task 9 item 5).
 Groups with fewer than 3 trials are shown but marked low confidence, exactly
 like the CLI.

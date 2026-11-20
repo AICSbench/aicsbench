@@ -76,8 +76,10 @@ so they cannot drift from it. Every model forbids extra keys.
 ## Fixture
 
 `tests/fixtures/site-export/` is an export of `tests/fixtures/site-data/`
-(two bundles: one verified, one community, two harnesses, two stacks, with
-`<script>alert(1)</script>` in a submitter name and notes). `aicsbench/web`
+(two bundles: one verified, one community, two harnesses, two stacks; the
+verified run has Claude Code + Opus on Anthropic and Codex + GPT on OpenAI on
+one stack, so its harness + model leaderboards rank two providers' packages;
+with `<script>alert(1)</script>` in a submitter name and notes). `aicsbench/web`
 copies it for its own tests, so changing it changes that contract.
 Regenerate both folders with:
 

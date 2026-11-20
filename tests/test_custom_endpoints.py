@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -908,6 +909,104 @@ def test_agent_model_comparison_refuses_mixed_providers() -> None:
     for dimension in (ComparisonDimension.AGENT_MODEL, ComparisonDimension.HARNESS_MODEL):
         with pytest.raises(ValueError, match="harness comparison mixes providers"):
             compare_trials([direct, gateway], dimension)
+
+
+PAIR_DIMENSIONS = (
+    [ComparisonDimension.HARNESS_MODEL],
+    [ComparisonDimension.HARNESS, ComparisonDimension.MODEL],
+    [ComparisonDimension.AGENT_MODEL],
+    [ComparisonDimension.AGENT, ComparisonDimension.MODEL],
+)
+
+
+def direct_packages() -> list[Any]:
+    """Claude Code + Opus on Anthropic and Codex + GPT on OpenAI, both direct."""
+    return [
+        gatewayed(
+            f"c{i}",
+            agent="claude",
+            model="claude-opus-5-5",
+            provider="anthropic",
+            endpoint_host=None,
+        )
+        for i in range(2)
+    ] + [
+        gatewayed(f"x{i}", agent="codex", model="gpt-6-luna", provider="openai", endpoint_host=None)
+        for i in range(3)
+    ]
+
+
+@pytest.mark.parametrize("dimensions", PAIR_DIMENSIONS)
+def test_harness_model_rows_may_differ_in_provider(dimensions: list[Any]) -> None:
+    # A leaderboard of harness + model packages ranks each package as used:
+    # Claude Code + Opus on Anthropic against Codex + GPT on OpenAI.
+    rows = compare_trials(direct_packages(), dimensions)
+    # agent_model labels a pair "harness:model"; the other forms "harness + model".
+    assert sorted((row.value.replace(":", " + "), row.trials) for row in rows) == [
+        ("claude + claude-opus-5-5", 2),
+        ("codex + gpt-6-luna", 3),
+    ]
+
+
+def test_harness_model_aliases_give_identical_rows() -> None:
+    results = [
+        [
+            replace(row, value=row.value.replace(":", " + "))
+            for row in compare_trials(direct_packages(), dims)
+        ]
+        for dims in PAIR_DIMENSIONS
+    ]
+    assert all(rows == results[0] for rows in results)
+
+
+def test_harness_only_still_refuses_mixed_providers_across_packages() -> None:
+    # Comparing harnesses isolates the harness; the provider must not vary.
+    for dimension in (
+        ComparisonDimension.HARNESS,
+        ComparisonDimension.AGENT,
+        ComparisonDimension.HARNESS_VERSION,
+    ):
+        with pytest.raises(ValueError, match="harness comparison mixes providers|mixes harnesses"):
+            compare_trials(direct_packages(), dimension)
+    same_model = [
+        gatewayed("a", agent="claude", provider="anthropic", endpoint_host=None),
+        gatewayed("b", agent="codex", provider="openai", endpoint_host=None),
+    ]
+    with pytest.raises(ValueError, match="harness comparison mixes providers"):
+        compare_trials(same_model, ComparisonDimension.HARNESS)
+
+
+@pytest.mark.parametrize("dimensions", PAIR_DIMENSIONS)
+def test_harness_model_row_with_two_providers_is_refused(dimensions: list[Any]) -> None:
+    # Other rows may differ, but one row never pools a direct and a gateway run.
+    trials = [
+        *direct_packages(),
+        gatewayed("g", agent="codex", model="gpt-6-luna", provider="openrouter"),
+    ]
+    with pytest.raises(ValueError, match="harness comparison mixes providers"):
+        compare_trials(trials, dimensions)
+
+
+@pytest.mark.parametrize("dimensions", PAIR_DIMENSIONS)
+def test_harness_model_rows_refuse_an_unknown_provider(dimensions: list[Any]) -> None:
+    legacy = gatewayed(
+        "u", agent="claude", model="claude-sonnet-5", provider=None, endpoint_host=None
+    )
+    with pytest.raises(ValueError, match="needs a recorded provider"):
+        compare_trials([*direct_packages(), legacy], dimensions)
+
+
+def test_harness_model_rows_still_hold_the_stack_and_key() -> None:
+    other_stack = gatewayed(
+        "s", agent="claude", model="claude-opus-5-5", provider="anthropic", endpoint_host=None
+    )
+    other_stack.environment.stack = "laravel"
+    with pytest.raises(ValueError, match="mixes stacks"):
+        compare_trials([*direct_packages(), other_stack], ComparisonDimension.HARNESS_MODEL)
+    other_key = direct_packages()
+    other_key[0].max_repairs = 1
+    with pytest.raises(ValueError, match="repair budget"):
+        compare_trials(other_key, ComparisonDimension.HARNESS_MODEL)
 
 
 def test_explicit_provider_dimension_groups_legacy_trials_like_by_provider() -> None:

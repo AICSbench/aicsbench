@@ -19,9 +19,13 @@ _UNKNOWN_PROVIDER_REFUSAL = (
     "harness comparison needs a recorded provider; exclude trials recorded before provider tracking"
 )
 
-# These dimensions fix the harness and model pair, so the trials in a row must
-# also share one provider (task 9): a Codex run against OpenAI directly is
-# never ranked against a run of the same harness and model through a gateway.
+# Comparisons over these dimensions need a recorded provider (task 9). A plain
+# harness comparison isolates the harness, so the whole selection must share one
+# provider: a Codex run against OpenAI directly is never ranked against a Claude
+# Code run through OpenRouter. A harness + model comparison ranks whole
+# packages, so rows may differ in provider (Claude Code + Opus on Anthropic
+# against Codex + GPT on OpenAI), but each row holds one provider: a direct run
+# and a gateway run of the same harness and model are never pooled.
 # ``HARNESS_MODEL`` never reaches _check_values (it expands to HARNESS + MODEL),
 # it is listed so a future refactor cannot lose the guard.
 _SINGLE_PROVIDER_DIMENSIONS = frozenset(
@@ -113,6 +117,14 @@ def _normalize(
     return tuple(expanded)
 
 
+def _groups_harness_and_model(dimensions: tuple[ComparisonDimension, ...]) -> bool:
+    """True when every row is one harness + model pair (a package comparison)."""
+    return ComparisonDimension.AGENT_MODEL in dimensions or (
+        ComparisonDimension.MODEL in dimensions
+        and bool({ComparisonDimension.HARNESS, ComparisonDimension.AGENT}.intersection(dimensions))
+    )
+
+
 def _check_values(dimensions: tuple[ComparisonDimension, ...], trials: list[TrialResult]) -> None:
     harnesses = {trial.agent.name for trial in trials}
     models = {trial.agent.model_key for trial in trials}
@@ -137,7 +149,14 @@ def _check_values(dimensions: tuple[ComparisonDimension, ...], trials: list[Tria
         # combining them under an explicit provider row is safe.
         if None in providers:
             raise ValueError(_UNKNOWN_PROVIDER_REFUSAL)
-        if len(providers) > 1:
+        if _groups_harness_and_model(dimensions):
+            per_row: dict[tuple[str, ...], set[str | None]] = {}
+            for trial in trials:
+                row = tuple(trial.dimension_value(item) for item in dimensions)
+                per_row.setdefault(row, set()).add(trial.agent.provider)
+            if any(len(row_providers) > 1 for row_providers in per_row.values()):
+                raise ValueError(_PROVIDER_REFUSAL)
+        elif len(providers) > 1:
             raise ValueError(_PROVIDER_REFUSAL)
     covered = {axis for dimension in dimensions for axis in _COVERAGE[dimension]}
     mixed = [

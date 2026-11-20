@@ -42,7 +42,10 @@ need filtering and grouping on demand, without a server.
    Before querying, `src/lib/compare/refusals.ts` applies the same refusals
    as `compare_trials`, with the same messages: a mixed comparability key; a
    stack comparison over several harness + model pairs; a model or harness
-   comparison over several stacks or several model keys; a selection that
+   comparison over several stacks or several model keys; a harness or
+   harness version comparison over several providers, or a harness + model
+   row over several providers (rows may differ in provider; task 9 item 5);
+   an unknown provider in any of these; a selection that
    mixes `suite_sha256` values ("comparison mixes acceptance suites; pick
    one suite", with a `suite` filter listing the hashes); and so on. The page
    shows the message instead of a table and highlights the filter the user
@@ -64,7 +67,8 @@ need filtering and grouping on demand, without a server.
      version (newest by default, or pinned with `task=<id>@<version>`). Its
      cells are exactly the single-task comparison with the same `by` and
      filters, so every refusal still applies per column (one stack for a
-     model comparison, one provider for a harness comparison, one suite, and
+     model comparison, one provider for a harness comparison, one provider
+     per row for a harness + model comparison, one suite, and
      so on). A refused column shows the message in its header and has no
      cells. Rows never mix task versions or suites inside one cell.
    - **Cell:** success rate and mean agent time over passed trials, with the

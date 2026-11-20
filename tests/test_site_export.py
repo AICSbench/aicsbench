@@ -115,8 +115,11 @@ def test_fixture_lists_every_page_kind_with_known_values() -> None:
     verified, *_, community = task["sections"]
     assert verified["verified_only"] is True
     assert verified["fixed"]["stack"] == "fastapi"
-    assert verified["rows"][0]["value"] == "codex + gpt-6-luna"
-    assert verified["rows"][0]["success_rate"] == pytest.approx(2 / 3)
+    assert [row["value"] for row in verified["rows"]] == [
+        "claude + claude-opus-5-5",
+        "codex + gpt-6-luna",
+    ]
+    assert verified["rows"][1]["success_rate"] == pytest.approx(2 / 3)
     assert community["verified_only"] is False
     assert "community results" in community["heading"]
     assert "/tasks/task-management-api/harnesses/claude/" in pages
@@ -124,6 +127,36 @@ def test_fixture_lists_every_page_kind_with_known_values() -> None:
     leaderboard = pages["/leaderboard/"]["sections"]
     assert [section["fixed"] for section in leaderboard] == [{"stack": "fastapi"}]
     assert all(section["verified_only"] for section in pages["/"]["sections"])
+
+
+def test_mixed_provider_packages_get_ranked_rows_on_every_leaderboard() -> None:
+    """Claude Code + Opus (Anthropic) and Codex + GPT (OpenAI) on one stack are ranked."""
+    trials = {
+        row["trial_id"]: row["provider"]
+        for row in load(EXPORT, "data/trials.json")  # type: ignore[union-attr]
+        if row["run_id"] == "run-verified-001"
+    }
+    assert set(trials.values()) == {"anthropic", "openai"}
+    expected = [
+        # value, passed, trials, mean seconds over passed trials
+        ("claude + claude-opus-5-5", 2, 2, 510.0),
+        ("codex + gpt-6-luna", 2, 3, 630.0),
+    ]
+    pages = pages_of(EXPORT)
+    for path in ("/", "/tasks/task-management-api/", "/tasks/task-management-api/stacks/fastapi/"):
+        [section] = [
+            s for s in pages[path]["sections"] if s["by"] == "harness_model" and s["verified_only"]
+        ]
+        assert section["refused"] is None, path
+        assert [
+            (r["value"], r["passed"], r["trials"], r["mean_seconds"]) for r in section["rows"]
+        ] == expected, path
+    [board] = pages["/leaderboard/"]["sections"]
+    assert board["matrix"]["columns"][0]["refused"] is None
+    assert [
+        (r["value"], r["cells"][0]["passed"], r["overall"]["mean_rank"])
+        for r in board["matrix"]["rows"]
+    ] == [("claude + claude-opus-5-5", 2, 1), ("codex + gpt-6-luna", 2, 2)]
 
 
 def test_fixture_copies_submitted_strings_unchanged() -> None:
@@ -137,7 +170,7 @@ def test_fixture_copies_submitted_strings_unchanged() -> None:
     verified = [row for row in rows if row["run_id"] == "run-verified-001"]  # type: ignore[union-attr]
     assert {row["submitter"] for row in verified} == {"verified-submitter"}
     meta = load(EXPORT, "data/meta.json")
-    assert (meta["runs"], meta["trials"]) == (2, 5)  # type: ignore[index]
+    assert (meta["runs"], meta["trials"]) == (2, 7)  # type: ignore[index]
 
 
 def test_unavailable_means_are_null_not_zero() -> None:
@@ -256,7 +289,7 @@ def test_suite_hashes_and_old_versions_get_their_own_sections(
     ]
     assert "suite bbbbbbbb" in by_model[0]["heading"]
     assert "suite" not in by_model[2]["heading"]  # version 1 has a single suite
-    assert [row["trials"] for s in by_model for row in s["rows"]] == [1, 3, 1]
+    assert [row["trials"] for s in by_model for row in s["rows"]] == [1, 2, 3, 1]
     meta = load(out, "data/meta.json")
     assert {(t["id"], t["version"]) for t in meta["tasks"]} == {  # type: ignore[index]
         ("task-management-api", "1"),
@@ -341,7 +374,7 @@ def test_out_may_not_be_a_symlinked_submissions_target(tmp_path: Path) -> None:
     for out in (data / "submissions", real / "submissions", real):
         with pytest.raises(SiteExportError):
             run_export(data, out)
-    assert len(trials_of(real)) == 5
+    assert len(trials_of(real)) == 7
 
 
 @pytest.mark.parametrize("relative", ["submissions", "submissions/out", "."])
@@ -350,7 +383,7 @@ def test_out_may_not_hold_the_bundles(fixture_data: Path, relative: str) -> None
 
     with pytest.raises(SiteExportError):
         run_export(fixture_data, fixture_data / relative)
-    assert len(trials_of(fixture_data)) == 5
+    assert len(trials_of(fixture_data)) == 7
 
 
 def test_leaderboard_columns_are_the_same_on_every_stack(tmp_path: Path) -> None:
