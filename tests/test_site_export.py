@@ -467,6 +467,10 @@ def test_cli_compare_tasks_prints_matrix(tmp_path: Path) -> None:
     other = manifest(other_suite.run_id).model_copy(update={"acceptance_suite_sha256": "e" * 64})
     store.save_manifest(other)
     store.save_trial(other_suite)
+    unrelated = make_trial("r-unrelated", 8, task="z")
+    store.save_manifest(manifest(unrelated.run_id))
+    store.save_trial(unrelated)
+    (tmp_path / "results" / "r-unrelated" / "manifest.json").write_text("{broken")
     mixed = runner.invoke(app, [*base, "--matrix", "a,b"], terminal_width=250)
     assert mixed.exit_code == 0, mixed.output
     assert "acceptance" in mixed.output and "refused" in mixed.output
