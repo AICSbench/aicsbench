@@ -368,9 +368,9 @@ def _check_endpoint_host(trials: dict[str, TrialResult], problems: list[Problem]
             Problem(
                 "schema",
                 f"trials/{trial.trial_id}.json",
-                f"endpoint_host '{host}' is not an allowlisted public gateway host "
-                f"({allowed}) or '{CUSTOM_ENDPOINT_HOST}'; submit replaces a private "
-                "gateway address with 'custom'",
+                f"endpoint_host is not an allowlisted public gateway host ({allowed}) "
+                f"or '{CUSTOM_ENDPOINT_HOST}'; submit replaces a private gateway "
+                "address with 'custom'",
             )
         )
 
@@ -508,9 +508,7 @@ def _report_text_matches(
             # when the member also carries an oversized integer.
             matches += find_secrets(json.loads(text, parse_int=str))
         except RecursionError:
-            problems.append(
-                Problem("layout", where, "JSON member is nested too deeply to parse")
-            )
+            problems.append(Problem("layout", where, "JSON member is nested too deeply to parse"))
         except ValueError:
             pass
     if matches:

@@ -120,16 +120,19 @@ def _check_values(dimensions: tuple[ComparisonDimension, ...], trials: list[Tria
         len(harnesses) > 1 or len(models) > 1 or len(stacks) > 1
     ):
         raise ValueError(_HARNESS_VERSION_REFUSAL)
-    if ComparisonDimension.PROVIDER not in dimensions and _SINGLE_PROVIDER_DIMENSIONS.intersection(
-        dimensions
+    if _SINGLE_PROVIDER_DIMENSIONS.intersection(dimensions) and (
+        ComparisonDimension.PROVIDER not in dimensions
     ):
         # A harness run's provider must be recorded and single: a Codex run
         # against OpenAI directly is never ranked against a Claude Code run
         # through OpenRouter, and two unknown-provider trials may have used
         # different gateways. When PROVIDER is an explicit grouping dimension
         # the user asked for one row per provider, so the guard is skipped:
-        # rows never rank a direct run against a gateway run, and the
-        # comparability_key check in compare_trials still applies regardless.
+        # rows never rank a direct run against a gateway run, the
+        # comparability_key check in compare_trials still applies regardless,
+        # and unknown-provider trials are pre-endpoint-era direct runs anyway
+        # (custom endpoints did not exist before provider tracking), so
+        # combining them under an explicit provider row is safe.
         if None in providers:
             raise ValueError(_UNKNOWN_PROVIDER_REFUSAL)
         if len(providers) > 1:

@@ -40,6 +40,23 @@ def test_credential_target_must_be_absolute() -> None:
         CredentialFile(source=Path("~/.codex/auth.json"), target=".codex/auth.json")
 
 
+def test_merged_with_gives_the_endpoint_side_precedence_across_collections() -> None:
+    # The endpoint supplies one variable by passing it through and another by
+    # renaming it; the explicit selection must not keep either name beside the
+    # endpoint's credentials in any collection, in either direction.
+    endpoint = AgentAuthConfig(
+        mode=AuthMode.API_KEY, env=["GW_TOKEN"], env_from={"ANTHROPIC_AUTH_TOKEN": "GATEWAY_KEY"}
+    )
+    explicit = AgentAuthConfig(
+        mode=AuthMode.API_KEY,
+        env=["ANTHROPIC_AUTH_TOKEN"],
+        env_from={"GW_TOKEN": "HOST_VAR"},
+    )
+    merged = explicit.merged_with(endpoint)
+    assert merged.env == ["GW_TOKEN"]
+    assert merged.env_from == {"ANTHROPIC_AUTH_TOKEN": "GATEWAY_KEY"}
+
+
 def test_missing_reports_names_only(tmp_path: Path) -> None:
     present = tmp_path / "auth.json"
     present.write_text("{}")

@@ -95,11 +95,30 @@ class AgentAuthConfig(StrictModel):
         return self
 
     def merged_with(self, other: AgentAuthConfig) -> AgentAuthConfig:
-        """The union of two configs' credentials (adds a custom endpoint's gateway variable)."""
+        """The union of two configs' credentials, with the endpoint's (``other``) winning.
+
+        A name the endpoint supplies - by passing through or by renaming - must
+        not survive as an explicit credential beside it, or the harness would
+        receive two credentials for one variable and preflight would fail.
+        """
+        covered = set(other.env) | set(other.env_from)
+        env = [
+            name
+            for name in [*self.env, *(name for name in other.env if name not in self.env)]
+            if name not in set(other.env_from)
+        ]
+        env_from = {
+            **{
+                container: host
+                for container, host in self.env_from.items()
+                if container not in covered
+            },
+            **other.env_from,
+        }
         return AgentAuthConfig(
             mode=self.mode,
-            env=[*self.env, *(name for name in other.env if name not in self.env)],
-            env_from={**self.env_from, **other.env_from},
+            env=env,
+            env_from=env_from,
             files=[*self.files, *(file for file in other.files if file not in self.files)],
         )
 

@@ -427,10 +427,17 @@ class DockerExecutionEnvironment(ExecutionEnvironment):
                 for container, host in auth.env_from.items():
                     args += ["--env", container]
                     value = os.environ.get(host)
-                    if value is not None:
-                        # Read now and hand to the docker CLI's process environment:
-                        # the value still never appears in argv or files.
-                        auth_env[container] = value
+                    if value is None:
+                        # Preflight checked this earlier, but a long run may
+                        # lose the variable; failing here (before `create`)
+                        # still triggers the cleanup path below.
+                        raise ExecutionEnvironmentError(
+                            f"environment variable {host} "
+                            f"(for container variable {container}) is not set"
+                        )
+                    # Read now and hand to the docker CLI's process environment:
+                    # the value still never appears in argv or files.
+                    auth_env[container] = value
                 for f in auth.files:
                     if f.mode is MountMode.COPY:
                         pending.append((f.host_path, f.target))

@@ -105,8 +105,11 @@ class CodexAdapter(CliAgentAdapter):
             cmd += ["--config", f'model_reasoning_effort="{task.reasoning_effort}"']
         if task.endpoint is not None:
             endpoint = task.endpoint
+            # Codex 0.167.2 defaults model_providers.<id>.name to "" and
+            # rejects that during configuration loading, so set it explicitly.
             cmd += [
                 "--config", 'model_provider="bench"',
+                "--config", 'model_providers.bench.name="bench"',
                 "--config", f'model_providers.bench.base_url="{endpoint.base_url}"',
                 "--config", f'model_providers.bench.env_key="{endpoint.api_key_env}"',
             ]  # fmt: skip

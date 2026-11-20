@@ -14,6 +14,7 @@ from ai_benchmark.environment.docker import (
     _package_install_script,
     agent_layer_dockerfile,
 )
+from ai_benchmark.errors import ExecutionEnvironmentError
 
 
 class FakeCLI:
@@ -131,6 +132,23 @@ def test_create_passes_secrets_by_name_only(tmp_path: Path, monkeypatch: Any) ->
     e.destroy(handle)
     e.destroy(handle)  # idempotent
     assert ["network", "rm", "ai-benchmark-t1-net"] in cli.calls
+
+
+def test_create_fails_when_an_env_from_variable_is_missing(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    monkeypatch.setenv("TOKEN", "super-secret")
+    monkeypatch.delenv("GATEWAY_KEY", raising=False)
+    auth = AgentAuthConfig(env=["TOKEN"], env_from={"GATEWAY_TOKEN": "GATEWAY_KEY"})
+    cli = FakeCLI()
+    e = env(cli)
+    image = ImageInfo(stack_id="fastapi", reference="agent-img")
+    with pytest.raises(ExecutionEnvironmentError, match=r"GATEWAY_KEY.*GATEWAY_TOKEN"):
+        e.create(STACK, image, tmp_path, "t-missing", auth)
+    # Preflight checked the variable earlier, but a long run may lose it: the
+    # failure happens at container creation and cleans up the network created
+    # just before it.
+    assert ["network", "rm", "ai-benchmark-t-missing-net"] in cli.calls
 
 
 def test_exec_marks_timeout(tmp_path: Path) -> None:

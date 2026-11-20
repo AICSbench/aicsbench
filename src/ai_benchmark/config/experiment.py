@@ -85,12 +85,16 @@ class EndpointConfig(StrictModel):
             address = ipaddress.ip_address(host)
         except ValueError:
             address = None
-            if host.isdigit():
-                # 'http://16909060' means http://1.2.3.4 to a URL parser, so a
-                # dotless integer host is still an IP literal, not a Docker
-                # service name.
+            hex_host = host.startswith(("0x", "0X")) and all(
+                c in "0123456789abcdefABCDEF" for c in host[2:]
+            )
+            if host.isdigit() or hex_host:
+                # WHATWG URL parsing reads dotless integer hosts as IPv4
+                # addresses in decimal ('16909060') or hexadecimal
+                # ('0x01020304') notation, so either spelling is an IP
+                # literal, not a Docker service name.
                 with contextlib.suppress(ValueError):
-                    address = ipaddress.ip_address(int(host))
+                    address = ipaddress.ip_address(int(host, 16 if hex_host else 10))
         if parts.scheme == "https":
             return v
         if address is not None:
@@ -139,8 +143,10 @@ class AgentSelection(StrictModel):
         if self.endpoint is not None:
             # Two selections differing only in their endpoint are different
             # trials: without this they collide in the duplicate check and
-            # their trial IDs would overwrite each other's results.
-            return f"{key}@{self.endpoint.provider}:{self.endpoint.host}"
+            # their trial IDs would overwrite each other's results. The full
+            # address (scheme, host, port and path) separates endpoints that
+            # differ only in port or path.
+            return f"{key}@{self.endpoint.provider}:{self.endpoint.base_url}"
         return key
 
     @model_validator(mode="after")

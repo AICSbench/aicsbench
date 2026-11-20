@@ -155,12 +155,17 @@ def test_endpoint_rejects_an_invalid_port(base_url: str) -> None:
     "base_url",
     [
         "http://16909060",  # the integer form of 1.2.3.4: a public IP, dotless
+        "http://0x01020304",  # the hex form of the same public IP
         "http://[2001:4860:4860::8888]/v1",  # a public IPv6 literal
     ],
 )
 def test_endpoint_rejects_plain_http_to_a_public_ip_literal(base_url: str) -> None:
     with pytest.raises(ValueError, match="plain http"):
         EndpointConfig(provider="openrouter", base_url=base_url, api_key_env=KEY_ENV)
+
+
+def test_endpoint_allows_plain_http_to_a_private_hex_ip_literal() -> None:
+    assert EndpointConfig(provider="openrouter", base_url="http://0x7f000001", api_key_env=KEY_ENV)
 
 
 def test_endpoint_rejects_an_unbracketed_ipv6_url() -> None:
@@ -209,7 +214,24 @@ def test_selection_key_adds_the_endpoint_identity_only_with_an_endpoint() -> Non
     assert AgentSelection(agent="codex", model="m").key == "codex:m"
     assert AgentSelection(agent="codex").key == "codex"
     gatewayed_key = AgentSelection.model_validate(selection("codex", "m")).key
-    assert gatewayed_key == "codex:m@openrouter:openrouter.ai"
+    assert gatewayed_key == "codex:m@openrouter:https://openrouter.ai/api/v1"
+
+
+def test_selection_key_separates_endpoints_differing_in_port_or_path(
+    env_settings: Any,
+) -> None:
+    other_port = endpoint_payload(
+        provider="litellm", base_url="https://gw.example.com:4001/v1", api_key_env="LITELLM_KEY"
+    )
+    other_path = endpoint_payload(
+        provider="litellm", base_url="https://gw.example.com/v2", api_key_env="LITELLM_KEY"
+    )
+    keys = {
+        AgentSelection.model_validate(selection("codex", "m")).key,
+        AgentSelection.model_validate({**selection("codex", "m"), "endpoint": other_port}).key,
+        AgentSelection.model_validate({**selection("codex", "m"), "endpoint": other_path}).key,
+    }
+    assert len(keys) == 3
 
 
 def test_endpoint_selections_differing_only_in_endpoint_are_distinct(
@@ -323,6 +345,27 @@ def test_resolve_auth_keeps_the_endpoint_variable_from_explicit_auth(
     assert auth.env == [KEY_ENV]
 
 
+def test_resolve_auth_drops_shadowed_env_from_entries(
+    env_settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(KEY_ENV, MARKER)
+    monkeypatch.setenv("PROVIDER_KEY_HOST", MARKER + "-host")
+    orchestrator = build(env_settings, FakeEnvironment())
+    orchestrator.registry.register(ClaudeCodeAdapter, replace=True)
+    agent_selection = AgentSelection.model_validate(
+        {
+            **selection("claude", "gpt-6-luna"),
+            "auth": {"mode": "api_key", "env_from": {"ANTHROPIC_API_KEY": "PROVIDER_KEY_HOST"}},
+        }
+    )
+    auth = orchestrator.resolve_auth(agent_selection, AuthMode.API_KEY)
+    # An explicit env_from renaming the provider's API-key variable shadows the
+    # gateway token exactly like an explicit env entry, so it is dropped too;
+    # the gateway token's own renaming survives unchanged.
+    assert auth.env == []
+    assert auth.env_from == {"ANTHROPIC_AUTH_TOKEN": KEY_ENV}
+
+
 def test_resolve_auth_keeps_explicit_auth_without_an_endpoint(
     env_settings: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -347,6 +390,7 @@ def test_codex_endpoint_command() -> None:
         )
     )
     assert 'model_provider="bench"' in cmd
+    assert 'model_providers.bench.name="bench"' in cmd
     assert 'model_providers.bench.base_url="https://openrouter.ai/api/v1"' in cmd
     assert f'model_providers.bench.env_key="{KEY_ENV}"' in cmd
     assert not any("wire_api" in part for part in cmd)
@@ -452,7 +496,14 @@ class RecordingRunner:
     ("adapter_cls", "expected"),
     [
         (ClaudeCodeAdapter, ["ANTHROPIC_BASE_URL"]),
-        (CodexAdapter, ["model_providers.bench.base_url", "model_providers.bench.env_key"]),
+        (
+            CodexAdapter,
+            [
+                "model_providers.bench.name",
+                "model_providers.bench.base_url",
+                "model_providers.bench.env_key",
+            ],
+        ),
         (OpenCodeAdapter, ["baseURL", f"{{env:{KEY_ENV}}}"]),
     ],
 )
@@ -742,6 +793,21 @@ def test_agent_model_comparison_refuses_mixed_providers() -> None:
             compare_trials([direct, gateway], dimension)
 
 
+def test_explicit_provider_dimension_groups_legacy_trials_like_by_provider() -> None:
+    # Unknown-provider trials are pre-endpoint-era direct runs (custom
+    # endpoints did not exist before provider tracking), so with PROVIDER as
+    # an explicit dimension they group into one row, exactly like --by
+    # provider does; plain --by harness still refuses to combine them.
+    legacy_a = gatewayed("a", provider=None, endpoint_host=None)
+    legacy_b = gatewayed("b", provider=None, endpoint_host=None)
+    with pytest.raises(ValueError, match="recorded provider"):
+        compare_trials([legacy_a, legacy_b], ComparisonDimension.HARNESS)
+    rows = compare_trials(
+        [legacy_a, legacy_b], [ComparisonDimension.HARNESS, ComparisonDimension.PROVIDER]
+    )
+    assert {row.value for row in rows} == {"codex + unknown"}
+
+
 def test_harness_and_provider_dimensions_group_per_provider() -> None:
     # Grouping by provider explicitly asks for one row per provider.
     direct = gatewayed("a", provider="openai", endpoint_host=None, model="gpt-6-luna")
@@ -885,6 +951,9 @@ def test_validator_rejects_a_private_gateway_host(catalog: Any, tmp_path: Path) 
     assert [problem.code for problem in problems] == ["schema"]
     assert "endpoint_host" in problems[0].message
     assert "trials/trial-001.json" in problems[0].path
+    # The submitted value itself stays out of the diagnostic: a gateway URL
+    # can carry credentials and the CLI prints problems without redaction.
+    assert "llm.internal.example" not in problems[0].message
 
 
 # -- provider defaults on the record -----------------------------------------
