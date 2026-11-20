@@ -13,6 +13,12 @@ cli-reference, authentication, env-vars) and the pinned CLI itself:
 * Subscription auth: ``CLAUDE_CODE_OAUTH_TOKEN`` from ``claude setup-token``.
   API auth: ``ANTHROPIC_API_KEY``. Only the variable for the chosen mode is
   passed in, so an API key can never silently take over a subscription run.
+* Custom endpoint (task 9): ``ANTHROPIC_BASE_URL`` as a plain environment
+  variable and ``ANTHROPIC_AUTH_TOKEN`` (sent as ``Authorization: Bearer``),
+  checked against https://code.claude.com/docs/en/llm-gateway-connect and
+  https://code.claude.com/docs/en/env-vars. The token's value comes from the
+  configured host variable (``api_key_env``), injected by name; the adapter
+  never sees it.
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ from ai_benchmark.agents.cli import (
 )
 from ai_benchmark.agents.registry import register_agent
 from ai_benchmark.config.auth import AgentAuthConfig
+from ai_benchmark.config.experiment import EndpointConfig
 from ai_benchmark.environment.base import AgentImageLayer
 from ai_benchmark.models.enums import AuthMode, MetricSource
 from ai_benchmark.models.metrics import Metric, TokenUsage, UsageMetrics
@@ -74,6 +81,21 @@ class ClaudeCodeAdapter(CliAgentAdapter):
         if mode is AuthMode.SUBSCRIPTION:
             return AgentAuthConfig(mode=mode, env=["CLAUDE_CODE_OAUTH_TOKEN"])
         return AgentAuthConfig(mode=mode, env=["ANTHROPIC_API_KEY"])
+
+    def endpoint_auth(self, endpoint: EndpointConfig) -> AgentAuthConfig:
+        """A gateway credential travels as ``ANTHROPIC_AUTH_TOKEN`` (Bearer auth).
+
+        The provider default (``ANTHROPIC_API_KEY``) is not injected: the CLI
+        checks that variable first and it would override the gateway token.
+        """
+        return AgentAuthConfig(
+            mode=AuthMode.API_KEY, env_from={"ANTHROPIC_AUTH_TOKEN": endpoint.api_key_env}
+        )
+
+    def endpoint_env(self, endpoint: EndpointConfig | None) -> dict[str, str]:
+        if endpoint is None:
+            return {}
+        return {"ANTHROPIC_BASE_URL": endpoint.base_url}
 
     def build_command(self, task: AgentTask) -> list[str]:
         cmd = [

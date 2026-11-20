@@ -14,6 +14,17 @@ reference) and the pinned CLI's own ``codex exec --help``:
 * Subscription auth: ``~/.codex/auth.json`` from ``codex login`` (ChatGPT
   plan). API auth: ``CODEX_API_KEY``, which ``codex exec`` reads directly.
 * Codex reports neither cost nor the model it used.
+* Custom endpoint (task 9): a ``model_providers.bench`` entry passed as
+  ``--config`` overrides (``model_provider``, ``base_url``, ``env_key``, and
+  ``wire_api`` when set), checked against
+  https://developers.openai.com/codex/config-advanced and
+  https://developers.openai.com/codex/config-reference. ``env_key`` names the
+  environment variable Codex reads the gateway key from, so the key's value
+  never appears in argv or files. Note the pinned CLI only speaks the
+  Responses API: since v0.159.2 ``wire_api = "chat"`` is rejected at config
+  load (upstream removed it; see
+  https://github.com/openai/codex/discussions/7782), so a ``chat`` endpoint
+  fails at CLI startup, not here.
 """
 
 from __future__ import annotations
@@ -92,6 +103,15 @@ class CodexAdapter(CliAgentAdapter):
             cmd += ["--model", task.model]
         if task.reasoning_effort:
             cmd += ["--config", f'model_reasoning_effort="{task.reasoning_effort}"']
+        if task.endpoint is not None:
+            endpoint = task.endpoint
+            cmd += [
+                "--config", 'model_provider="bench"',
+                "--config", f'model_providers.bench.base_url="{endpoint.base_url}"',
+                "--config", f'model_providers.bench.env_key="{endpoint.api_key_env}"',
+            ]  # fmt: skip
+            if endpoint.wire_api is not None:
+                cmd += ["--config", f'model_providers.bench.wire_api="{endpoint.wire_api}"']
         return [*cmd, "--", task.prompt]
 
     def validate_options(self, options: dict[str, Any]) -> None:

@@ -3,6 +3,7 @@
 from ai_benchmark.config.auth import AgentAuthConfig, CredentialFile, MountMode
 from ai_benchmark.config.experiment import (
     AgentSelection,
+    EndpointConfig,
     ExperimentConfig,
     McpServerConfig,
     ToolingConfig,
@@ -24,6 +25,7 @@ __all__ = [
     "CredentialFile",
     "MountMode",
     "AgentSelection",
+    "EndpointConfig",
     "BenchmarkSpec",
     "DockerSettings",
     "ExperimentConfig",

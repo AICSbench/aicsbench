@@ -30,7 +30,7 @@ from typing import Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_benchmark.config.auth import AgentAuthConfig
-from ai_benchmark.config.experiment import ToolingConfig
+from ai_benchmark.config.experiment import EndpointConfig, ToolingConfig
 from ai_benchmark.environment.base import AgentImageLayer, CommandRunner
 from ai_benchmark.models.enums import AuthMode
 from ai_benchmark.models.metrics import Metric, UsageMetrics
@@ -93,6 +93,10 @@ class AgentTask(BaseModel):
     model: str | None = None
     reasoning_effort: str | None = None
     tooling: ToolingConfig = Field(default_factory=ToolingConfig)
+    endpoint: EndpointConfig | None = Field(
+        default=None,
+        description="A custom model endpoint the harness routes every request through.",
+    )
     env: dict[str, str] = Field(
         default_factory=dict,
         description="Non-secret env vars. Credentials are injected separately.",
@@ -160,6 +164,15 @@ class AgentAdapter(ABC):
 
         Raise :class:`~ai_benchmark.errors.ConfigurationError` if the mode is unsupported.
         """
+
+    def endpoint_auth(self, endpoint: EndpointConfig) -> AgentAuthConfig:
+        """Container credentials for a custom endpoint (task 9): the key by variable name.
+
+        The default passes ``endpoint.api_key_env`` through unchanged. Adapters
+        whose CLI needs it under a different in-container name override this
+        (Claude Code reads ``ANTHROPIC_AUTH_TOKEN``).
+        """
+        return AgentAuthConfig(mode=AuthMode.API_KEY, env=[endpoint.api_key_env])
 
     # -- pre-flight (run inside the agent image) -----------------------------
 

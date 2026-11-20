@@ -14,8 +14,10 @@ Security model:
 * only the trial workspace (and credential files in ``bind_*`` mode) is
   mounted; the Docker socket is never mounted;
 * credentials are injected at ``create``/``start`` time only: environment
-  variables are passed by name (``-e NAME``) so values never appear in a
-  command line, and files are copied in or bind-mounted. Nothing secret is
+  variables are passed by name (``-e NAME``; a variable that must appear under
+  a different name inside the container is sourced from the host under its
+  original name) so values never appear in a command line, and files are
+  copied in or bind-mounted. Nothing secret is
   baked into an image or written to logs;
 * every container, network and image carries ``<label_prefix>.*`` labels so
   a crashed run can be cleaned up with :meth:`cleanup_stale`.
@@ -418,9 +420,17 @@ class DockerExecutionEnvironment(ExecutionEnvironment):
             for k, v in stack.env.items():
                 args += ["--env", f"{k}={v}"]
             pending: list[tuple[Path, str]] = []
+            auth_env: dict[str, str] = {}
             if auth is not None:
                 for var in auth.env:
                     args += ["--env", var]  # value comes from this process's env, not argv
+                for container, host in auth.env_from.items():
+                    args += ["--env", container]
+                    value = os.environ.get(host)
+                    if value is not None:
+                        # Read now and hand to the docker CLI's process environment:
+                        # the value still never appears in argv or files.
+                        auth_env[container] = value
                 for f in auth.files:
                     if f.mode is MountMode.COPY:
                         pending.append((f.host_path, f.target))
@@ -428,7 +438,7 @@ class DockerExecutionEnvironment(ExecutionEnvironment):
                         ro = ":ro" if f.mode is MountMode.BIND_READ_ONLY else ""
                         args += ["--volume", f"{f.host_path}:{f.target}{ro}"]
             args += ["--entrypoint", "sleep", image.reference, "infinity"]
-            self.cli.run(args)
+            self.cli.run(args, extra_env=auth_env)
             handle.container_id = name
             self._pending_files[handle.environment_id] = pending
             self._service_checks[handle.environment_id] = {
