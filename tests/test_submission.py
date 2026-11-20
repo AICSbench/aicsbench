@@ -656,9 +656,7 @@ def test_log_archive_without_secrets_passes(catalog: SpecCatalog, tmp_path: Path
     assert validate_bundle(bundle, catalog) == []
 
 
-def test_log_archive_reports_unparseable_json_member(
-    catalog: SpecCatalog, tmp_path: Path
-) -> None:
+def test_log_archive_reports_unparseable_json_member(catalog: SpecCatalog, tmp_path: Path) -> None:
     bundle = _log_bundle(catalog, tmp_path)
     _add_log(bundle, "trial-001", "[" * 10000 + "]" * 10000, member="output.json")
     problems = validate_bundle(bundle, catalog)
@@ -666,9 +664,7 @@ def test_log_archive_reports_unparseable_json_member(
     assert "nested too deeply" in problems[0].message
 
 
-def test_log_archive_tolerates_oversized_json_integer(
-    catalog: SpecCatalog, tmp_path: Path
-) -> None:
+def test_log_archive_tolerates_oversized_json_integer(catalog: SpecCatalog, tmp_path: Path) -> None:
     bundle = _log_bundle(catalog, tmp_path)
     _add_log(bundle, "trial-001", '{"n": ' + "9" * 5000 + "}\n", member="output.json")
     assert validate_bundle(bundle, catalog) == []

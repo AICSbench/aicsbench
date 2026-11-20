@@ -213,6 +213,7 @@ class BenchmarkOrchestrator:
             )
             if on_trial_complete is not None:
                 on_trial_complete(result)
+
         if config.max_parallel == 1:
             abort_reason: str | None = None
             for trial in plan.trials:
@@ -247,9 +248,9 @@ class BenchmarkOrchestrator:
                 trial = next(remaining, None)
                 if trial is None:
                     return False
-                active[pool.submit(
-                    self.run_trial, plan, trial, task, stacks[trial.stack_id], config
-                )] = trial
+                active[
+                    pool.submit(self.run_trial, plan, trial, task, stacks[trial.stack_id], config)
+                ] = trial
                 return True
 
             for _ in range(config.max_parallel):
@@ -546,7 +547,8 @@ class BenchmarkOrchestrator:
         )
         perf.time_to_all_tests_pass_seconds = Metric[float].not_applicable(
             "acceptance tests have not passed"
-            if result.max_repairs else "repair iterations are disabled"
+            if result.max_repairs
+            else "repair iterations are disabled"
         )
         result.metrics.usage = _combined_usage(attempts)
         result.agent.version = agent.agent_version or result.agent.version
@@ -555,9 +557,9 @@ class BenchmarkOrchestrator:
             result.agent.requested_model, agent.reported_model
         )
         result.rate_limit_events = [event for item in attempts for event in item.rate_limit_events]
-        result.raw = dict(agent.raw) if len(attempts) == 1 else {
-            "attempts": [item.raw for item in attempts]
-        }
+        result.raw = (
+            dict(agent.raw) if len(attempts) == 1 else {"attempts": [item.raw for item in attempts]}
+        )
         for index, item in enumerate(attempts):
             prefix = "" if index == 0 else f"repair-{index}-"
             for name, path in (
@@ -739,8 +741,12 @@ def _combined_usage(attempts: list[AgentRunResult]) -> UsageMetrics:
 def _sum_int(metrics: list[Metric[int]]) -> Metric[int]:
     if not all(metric.is_available for metric in metrics):
         return Metric[int].unavailable("not reported for every agent attempt", unit=metrics[0].unit)
-    return Metric[int].of(sum(metric.value or 0 for metric in metrics), MetricSource.DERIVED,
-                          unit=metrics[0].unit, note="sum across agent attempts")
+    return Metric[int].of(
+        sum(metric.value or 0 for metric in metrics),
+        MetricSource.DERIVED,
+        unit=metrics[0].unit,
+        note="sum across agent attempts",
+    )
 
 
 def _sum_float(metrics: list[Metric[float]]) -> Metric[float]:
@@ -749,8 +755,10 @@ def _sum_float(metrics: list[Metric[float]]) -> Metric[float]:
             "not reported for every agent attempt", unit=metrics[0].unit
         )
     return Metric[float].of(
-        sum(metric.value or 0.0 for metric in metrics), MetricSource.DERIVED,
-        unit=metrics[0].unit, note="sum across agent attempts"
+        sum(metric.value or 0.0 for metric in metrics),
+        MetricSource.DERIVED,
+        unit=metrics[0].unit,
+        note="sum across agent attempts",
     )
 
 

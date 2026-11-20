@@ -50,10 +50,16 @@ def test_compare_ranks_passing_times_and_counts_limit_hits() -> None:
     rows = compare_trials([*fast, slow, failed], ComparisonDimension.STACK)
     assert [row.value for row in rows] == ["fastapi", "laravel"]
     assert (rows[0].passed, rows[0].trials, rows[0].mean_seconds, rows[0].stdev_seconds) == (
-        3, 3, 12.0, 2.0
+        3,
+        3,
+        12.0,
+        2.0,
     )
     assert (rows[1].passed, rows[1].rate_limited, rows[1].timed, rows[1].mean_seconds) == (
-        1, 1, 0, None
+        1,
+        1,
+        0,
+        None,
     )
     assert rows[1].low_confidence and not rows[0].low_confidence
     assert rows[0].mean_cost_usd == 0.02 and rows[1].mean_cost_usd is None
@@ -169,9 +175,7 @@ def test_harness_version_combined_with_model_refuses_mixed_stacks() -> None:
         _modeled("b", model="m1", stack="laravel", version="2"),
     ]
     with pytest.raises(ValueError, match="mixes stacks; filter to one stack"):
-        compare_trials(
-            trials, [ComparisonDimension.HARNESS_VERSION, ComparisonDimension.MODEL]
-        )
+        compare_trials(trials, [ComparisonDimension.HARNESS_VERSION, ComparisonDimension.MODEL])
 
 
 def test_same_model_key_compares_across_harnesses() -> None:

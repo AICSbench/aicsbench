@@ -33,9 +33,10 @@ def test_dashboard_serves_comparison_and_no_raw_provider_data(tmp_path: Path) ->
     data = json.loads(body)
     assert status == 200
     assert {group["value"] for group in data["groups"]} == {"fastapi", "express"}
-    assert next(group for group in data["groups"] if group["value"] == "fastapi")[
-        "mean_seconds"
-    ] == 7.5
+    assert (
+        next(group for group in data["groups"] if group["value"] == "fastapi")["mean_seconds"]
+        == 7.5
+    )
 
 
 def test_dashboard_serves_harness_version_comparison_and_filter(tmp_path: Path) -> None:

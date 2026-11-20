@@ -4,10 +4,12 @@ An open-source platform that measures and compares how productive AI coding
 agents (Codex CLI, Claude Code, OpenCode, and more) are across programming
 languages and frameworks.
 
-> **Status: Phase 4 (execution and results).** Trials run in Docker with the
+> **Status: Phase 5 in progress (public results and submissions).** Trials run in Docker with the
 > built-in Claude Code, Codex CLI and OpenCode adapters
 > ([docs/agents.md](docs/agents.md)). Repair attempts, bounded parallel runs,
-> comparison reports and a local dashboard are available. See
+> comparison reports, a local dashboard, submission validation, and installed
+> language/framework version recording are available. The submit command and
+> public site export are still planned in [Phase 5](docs/phase-5/README.md). See
 > [ARCHITECTURE.md](ARCHITECTURE.md) for the full vision.
 
 ## Install (development)
@@ -32,6 +34,7 @@ aicsbench tasks                      # list benchmark tasks
 aicsbench stacks                     # list language/framework stacks
 aicsbench agents [--check --auth subscription]  # list adapters, check credentials
 aicsbench validate [FILES...]        # validate task/stack/experiment files
+aicsbench validate-submission PATH... # validate submission bundles
 aicsbench run --agents codex,claude:<model> --task task-management-api \
               --stacks fastapi,laravel --trials 5 --auth subscription --dry-run
 aicsbench run --config examples/experiment.yaml --dry-run
@@ -117,6 +120,7 @@ tests/                   Unit tests (pytest); tests/integration needs Docker
 ```bash
 pytest
 ruff check src tests benchmarks
+ruff format --check src tests benchmarks
 mypy src
 BENCHMARK_DOCKER_TESTS=1 pytest tests/integration   # one real trial in Docker
 ```

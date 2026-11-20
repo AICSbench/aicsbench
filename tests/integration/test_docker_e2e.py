@@ -145,8 +145,11 @@ class RepairScriptedAgent(ScriptedAgent):
     [(ScriptedAgent, 1, 0), (RepairScriptedAgent, 2, 1)],
 )
 def test_full_trial_in_docker(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    agent_cls: type[ScriptedAgent], parallel: int, repairs: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    agent_cls: type[ScriptedAgent],
+    parallel: int,
+    repairs: int,
 ) -> None:
     monkeypatch.setenv("SCRIPTED_TOKEN", "do-not-leak")
     tasks = tmp_path / "tasks" / "hello"
@@ -182,9 +185,14 @@ def test_full_trial_in_docker(
         settings, SpecCatalog(settings), registry, env, JsonResultStore(settings.results_dir)
     )
     cfg = ExperimentConfig.model_validate(
-        {"task": "hello", "agents": [{"agent": "scripted", "model": "none"}],
-         "stacks": ["py"], "trials": parallel, "max_parallel": parallel,
-         "max_repairs": repairs}
+        {
+            "task": "hello",
+            "agents": [{"agent": "scripted", "model": "none"}],
+            "stacks": ["py"],
+            "trials": parallel,
+            "max_parallel": parallel,
+            "max_repairs": repairs,
+        }
     )
     summary = o.run(cfg, run_id="it")
     results = list(o.store.iter_trials())
@@ -237,8 +245,11 @@ class ShortenerReferenceAgent(ScriptedAgent):
     ],
 )
 def test_reference_solution_passes_the_real_suite(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    task_id: str, agent_type: type[ScriptedAgent], minimum_tests: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    task_id: str,
+    agent_type: type[ScriptedAgent],
+    minimum_tests: int,
 ) -> None:
     """The shipped fastapi stack + task suite accept a correct implementation.
 

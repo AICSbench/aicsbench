@@ -51,6 +51,10 @@ def parse_junit(path: Path) -> JUnitSummary:
         elif case.find("skipped") is not None:
             skipped += 1
     return JUnitSummary(
-        tests=tests, failures=failures, errors=errors, skipped=skipped,
-        failed_cases=failed_cases, failure_details=failure_details,
+        tests=tests,
+        failures=failures,
+        errors=errors,
+        skipped=skipped,
+        failed_cases=failed_cases,
+        failure_details=failure_details,
     )

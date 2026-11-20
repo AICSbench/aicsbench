@@ -33,12 +33,14 @@ class CostlyAdapter(FakeAdapter):
     name = "costly"
 
     def parse_usage(self, raw: dict[str, Any]) -> tuple[UsageMetrics, Metric[str]]:
-        usage = UsageMetrics(tokens=TokenUsage(
-            accounting_scheme="fake",
-            input_tokens=Metric[int].of(10, MetricSource.AGENT_REPORTED),
-            output_tokens=Metric[int].of(5, MetricSource.AGENT_REPORTED),
-            total_tokens=Metric[int].of(15, MetricSource.AGENT_REPORTED),
-        ))
+        usage = UsageMetrics(
+            tokens=TokenUsage(
+                accounting_scheme="fake",
+                input_tokens=Metric[int].of(10, MetricSource.AGENT_REPORTED),
+                output_tokens=Metric[int].of(5, MetricSource.AGENT_REPORTED),
+                total_tokens=Metric[int].of(15, MetricSource.AGENT_REPORTED),
+            )
+        )
         usage.cost = Metric[float].of(0.42, MetricSource.AGENT_REPORTED, unit="USD")
         return usage, Metric[str].of("fake-model-2026", MetricSource.AGENT_REPORTED)
 
@@ -135,7 +137,11 @@ def probe_stack_settings(
 
 def probe_result(stdout: str = "", exit_code: int = 0, timed_out: bool = False) -> CommandResult:
     return CommandResult(
-        command=[], exit_code=exit_code, stdout=stdout, stderr="", duration_seconds=0.0,
+        command=[],
+        exit_code=exit_code,
+        stdout=stdout,
+        stderr="",
+        duration_seconds=0.0,
         timed_out=timed_out,
     )
 
@@ -262,7 +268,8 @@ def test_failed_tests_trigger_repair_in_same_trial(env_settings: PlatformSetting
     assert result.metrics.usage.tokens.total_tokens.value == 30
     assert "repair-1-acceptance-junit" in result.log_files
     prompts = [
-        call[1][-1] for call in env.calls
+        call[1][-1]
+        for call in env.calls
         if call[0] == "exec" and call[1][:2] == ["fake", "--prompt"]
     ]
     assert len(prompts) == 2

@@ -134,13 +134,13 @@ maintainer's setup steps.
 
 | Task | Status |
 | --- | --- |
-| 1 Harness fields and dimensions | not started |
-| 2 Submission bundle and validator | not started |
+| 1 Harness fields and dimensions | done in [aicsbench/aicsbench#21](https://github.com/AICSbench/aicsbench/pull/21) |
+| 2 Submission bundle and validator | done in [aicsbench/aicsbench#23](https://github.com/AICSbench/aicsbench/pull/23) |
 | 3 `aicsbench submit` | not started |
 | 4 Site export | not started |
 | 5 Compare page | not started |
 | 6 Data repository | not started |
 | 10 SvelteKit site | not started |
-| 7 Installed versions | not started |
+| 7 Installed versions | done in [aicsbench/aicsbench#22](https://github.com/AICSbench/aicsbench/pull/22) |
 | 8 Stack versions | not started |
 | 9 Custom endpoints | not started |
