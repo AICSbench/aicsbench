@@ -12,6 +12,9 @@ environment_notes: |
     the DATABASE_URL environment variable (postgresql://user:password@host:port/db).
 setup_commands:
   - [sh, -lc, "npm init -y >/dev/null && npm install --no-audit --no-fund --save-exact express@5.3.0"]
+version_probes:
+  language: [sh, -lc, "node -p process.versions.node"]
+  framework: [sh, -lc, "node -p \"require('express/package.json').version\""]
 env:
   DATABASE_URL: postgresql://bench:bench@postgres:5432/bench
 services:
