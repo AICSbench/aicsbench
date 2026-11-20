@@ -167,6 +167,8 @@ def test_version_probes_run_after_agent_and_before_acceptance(
     [r] = list(o.store.iter_trials(ResultFilter(run_id="r-probes")))
     assert r.status is TrialStatus.PASSED
     assert r.environment.installed_versions == {"language": "22.11.0", "framework": "4.21.0"}
+    # The stack takes no version ('4.21' is not exact), so nothing was checked.
+    assert r.environment.framework_version_changed is None and r.error is None
     calls = env.calls
     agent = next(
         i for i, c in enumerate(calls) if c[0] == "exec" and c[1][:2] == ["fake", "--prompt"]
@@ -242,6 +244,7 @@ def test_selected_version_reaches_setup_prompt_and_result(env_settings: Platform
     o.run(experiment(stacks=["express-latest@5.2.1"]), run_id="r-version")
     [r] = list(o.store.iter_trials(ResultFilter(run_id="r-version")))
     assert r.status is TrialStatus.PASSED and r.error is None
+    assert r.environment.framework_version_changed is False
     assert r.environment.stack == "express-latest@5.2.1"
     assert r.environment.framework_version == "5.2.1"
     [setup] = [c[1] for c in env.calls if c[0] == "exec" and "npm install" in c[1][-1]]
@@ -264,6 +267,16 @@ def test_declared_version_keeps_the_plain_stack_label(
     assert env.exec_env[setup[-1]] == {"FRAMEWORK_VERSION": "5.3.0"}
 
 
+def test_selected_version_without_framework_probe_output_is_not_checked(
+    env_settings: PlatformSettings,
+) -> None:
+    o = build(env_settings, FakeEnvironment())  # the framework probe prints nothing
+    o.run(experiment(stacks=["express-latest@5.2.1"]), run_id="r-unchecked")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-unchecked")))
+    assert "framework" not in r.environment.installed_versions
+    assert r.environment.framework_version_changed is None and r.error is None
+
+
 def test_installed_version_mismatch_is_warned_and_recorded_not_failed(
     env_settings: PlatformSettings, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -275,6 +288,7 @@ def test_installed_version_mismatch_is_warned_and_recorded_not_failed(
     [r] = list(o.store.iter_trials(ResultFilter(run_id="r-mismatch")))
     assert r.status is TrialStatus.PASSED
     assert r.environment.installed_versions["framework"] == "5.3.0"
+    assert r.environment.framework_version_changed is True
     assert r.error == (
         "version changed during trial: express 5.3.0 is installed, 5.2.1 was selected"
     )

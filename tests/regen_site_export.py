@@ -54,6 +54,7 @@ def make_trial(
     stack: str = "fastapi",
     status: TrialStatus = TrialStatus.PASSED,
     seconds: float | None = 600.0,
+    version_changed: bool | None = None,
 ) -> TrialResult:
     language, language_version, framework, framework_version = STACKS.get(
         stack, ("python", "3.13", "fastapi", "0.129")
@@ -84,6 +85,11 @@ def make_trial(
         tooling=ToolingRecord(mode=ToolingMode.STANDARD),
         started_at=datetime(2026, 11, 17, 7, tzinfo=timezone.utc) + timedelta(hours=index),
     )
+    if version_changed is not None:
+        # Task 8: core checked the installed framework against the selected one.
+        installed = "0.130.0" if version_changed else framework_version
+        trial.environment.installed_versions["framework"] = installed
+        trial.environment.framework_version_changed = version_changed
     if "provider" in AgentRecord.model_fields:
         # Task 9 refuses harness comparisons over trials without a provider.
         trial.agent.provider = AgentRecord.default_provider(harness, model)  # type: ignore[attr-defined]
@@ -169,8 +175,10 @@ def write_fixture_data(data: Path) -> None:
     write_bundle(
         data,
         [
-            make_trial("run-verified-001", 1, seconds=600.0),
-            make_trial("run-verified-001", 2, seconds=660.0),
+            # Task 8's flag: checked and unchanged, changed by the agent, and
+            # (the other trials) not checked.
+            make_trial("run-verified-001", 1, seconds=600.0, version_changed=False),
+            make_trial("run-verified-001", 2, seconds=660.0, version_changed=True),
             make_trial("run-verified-001", 3, status=TrialStatus.FAILED, seconds=900.0),
             # The same run also has Claude Code + Opus on the same stack, so the
             # harness + model leaderboards rank two providers' packages.

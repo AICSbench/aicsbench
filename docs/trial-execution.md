@@ -68,9 +68,12 @@ versions are informational only and are not part of `comparability_key`.
 After the probes, a stack that takes a version compares
 `installed_versions["framework"]` with the selected version. When they differ
 (the agent upgraded or downgraded the framework), the orchestrator logs a
-warning and adds `version changed during trial: <framework> <installed> is
-installed, <selected> was selected` to the trial's `error`. The trial status
-does not change.
+warning, sets `environment.framework_version_changed` to `true` and adds
+`version changed during trial: <framework> <installed> is installed,
+<selected> was selected` to the trial's `error`. The trial status does not
+change. When they match the flag is `false`; it stays `null` when nothing was
+checked (a stack without the parameter, or no framework probe output). Exports
+and the site export carry the flag as `framework_version_changed`.
 
 ## 5. Acceptance tests
 

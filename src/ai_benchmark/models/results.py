@@ -122,6 +122,13 @@ class EnvironmentRecord(BaseModel):
         description="Versions the stack's version probes observed at run time, e.g. "
         "'language' and 'framework'; optional with a default so older results still load.",
     )
+    framework_version_changed: bool | None = Field(
+        default=None,
+        description="True when the installed framework is not the version the run selected "
+        "(the agent changed it), False when it was checked and matches, None when not "
+        "checked: a stack without framework_version_param, no framework probe output, or a "
+        "trial recorded before version selection.",
+    )
 
 
 class ToolingRecord(BaseModel):

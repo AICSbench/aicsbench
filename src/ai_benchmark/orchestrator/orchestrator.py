@@ -670,16 +670,19 @@ class BenchmarkOrchestrator:
     def _check_selected_version(
         self, trial: PlannedTrial, stack: StackSpec, result: TrialResult
     ) -> None:
-        """Warn when the installed framework is not the selected version.
+        """Record whether the installed framework is still the selected version.
 
-        Only stacks that take a version install an exact one. The agent may have
-        changed it on purpose, so the trial keeps its status; the note goes in
-        ``error`` so reports can mark the trial.
+        Only stacks that take a version install an exact one; for the others
+        ``framework_version_changed`` stays None (not checked). The agent may
+        have changed the version on purpose, so the trial keeps its status; a
+        change is warned, flagged for exports and noted in ``error``.
         """
         installed = result.environment.installed_versions.get("framework")
         if not stack.framework_version_param or installed is None:
             return
-        if installed == stack.framework_version:
+        changed = installed != stack.framework_version
+        result.environment.framework_version_changed = changed
+        if not changed:
             return
         note = (
             f"{VERSION_CHANGED_NOTE}: {stack.framework} {installed} is installed, "
