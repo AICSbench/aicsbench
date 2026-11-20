@@ -58,6 +58,8 @@ def trial_row(trial: TrialResult) -> dict[str, str | int | float | bool | None]:
         "reasoning_effort": trial.agent.reasoning_effort,
         "language_version_installed": trial.environment.installed_versions.get("language"),
         "framework_version_installed": trial.environment.installed_versions.get("framework"),
+        "provider": trial.agent.provider,
+        "endpoint_host": trial.agent.endpoint_host,
     }
 
 

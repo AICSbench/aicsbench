@@ -400,7 +400,8 @@ def _matrix_trials() -> list[TrialResult]:
         # Task a: Y is faster and better than X.
         t("a", 1, "codex", "x", seconds=500.0),
         t("a", 2, "codex", "x", status=TrialStatus.FAILED),
-        t("a", 3, "claude", "y", seconds=100.0),
+        # One harness, so every row has one provider (task 9's harness rule).
+        t("a", 3, "codex", "y", seconds=100.0),
         # Task b: X only, so Y is incomplete.
         t("b", 4, "codex", "x", seconds=900.0),
         # Task c mixes stacks for one harness + model: refused.
@@ -424,7 +425,7 @@ def test_compare_matrix_columns_equal_compare_trials_and_rank_incomplete_last() 
     assert refused.refused == str(error.value)
 
     x, y = matrix.rows
-    assert (x.value, y.value) == ("codex + x", "claude + y")
+    assert (x.value, y.value) == ("codex + x", "codex + y")
     assert (x.overall.complete, x.overall.covered, x.overall.columns) == (True, 2, 2)
     assert x.overall.success_rate == pytest.approx(0.75)
     assert x.overall.mean_rank == pytest.approx(1.5)
@@ -448,10 +449,10 @@ def test_compare_matrix_applies_filters_and_pins_versions() -> None:
     newest = compare_matrix(trials, ComparisonDimension.HARNESS_MODEL, ["a"])
     assert newest.columns[0].task_version == "3"
     pinned = compare_matrix(
-        trials, ComparisonDimension.HARNESS_MODEL, ["a@2"], ResultFilter(agent="claude")
+        trials, ComparisonDimension.HARNESS_MODEL, ["a@2"], ResultFilter(model="y")
     )
     assert pinned.columns[0].task_version == "2"
-    assert [row.value for row in pinned.rows] == ["claude + y"]
+    assert [row.value for row in pinned.rows] == ["codex + y"]
 
 
 def test_cli_compare_tasks_prints_matrix(tmp_path: Path) -> None:

@@ -21,6 +21,8 @@
     },
     "reasoning_effort": null,
     "auth_mode": "subscription",
+    "provider": "anthropic",
+    "endpoint_host": null,
     "resolved_model": "claude-opus-5-5"
   },
   "environment": {

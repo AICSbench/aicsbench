@@ -16,8 +16,8 @@
   "logs_included": false,
   "files": {
     "manifest.json": "ef3787c67b110a7835c2133f80148422c78e71f9b4c8c90c452f7436adefcd64",
-    "trials/trial-001.json": "7b691ea2d814089be46af1b905f5c63dcdfccd101ffdb8718c6147d752d023c9",
-    "trials/trial-002.json": "11fd1fb2b3009139c527775fdef9f7cc79144a26d799b58105992fb9d3450ecc",
-    "trials/trial-003.json": "bcfea9c1340ad24f024476f810e9ed2738204d3543a3429a34fef361cf1c376a"
+    "trials/trial-001.json": "8932bd263ec9755cc80aa5d89930c3068ad370dfcfa04fa333c16cf39b523610",
+    "trials/trial-002.json": "ba12613f4ead6a6d89e703f590a3f8c5c0e0aa45dc70efaa72d0a05d62e61e61",
+    "trials/trial-003.json": "2e08912def5fb6b0ec8e9c8dc5b6170bb95fcca1690b1bbab80a6d30fa02534d"
   }
 }

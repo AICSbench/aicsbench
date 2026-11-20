@@ -21,6 +21,8 @@
     },
     "reasoning_effort": null,
     "auth_mode": "subscription",
+    "provider": "openai",
+    "endpoint_host": null,
     "resolved_model": "gpt-6-luna"
   },
   "environment": {

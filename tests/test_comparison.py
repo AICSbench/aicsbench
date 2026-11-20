@@ -25,9 +25,11 @@ def _modeled(
     stack: str = "fastapi",
     language: str = "python",
     version: str | None = None,
+    provider: str | None = "openai",
 ) -> TrialResult:
     item = trial("r1", trial_id, agent, TrialStatus.PASSED)
     item.agent.resolved_model = model
+    item.agent.provider = provider
     item.agent.version = version
     item.environment.stack = stack
     item.environment.language = language

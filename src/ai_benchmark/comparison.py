@@ -14,6 +14,25 @@ _HARNESS_VERSION_REFUSAL = (
     "harness version comparison mixes harnesses, models or stacks; filter to one of each"
 )
 SUITE_REFUSAL = "comparison mixes acceptance suites; pick one suite"
+_PROVIDER_REFUSAL = "harness comparison mixes providers; filter to one provider"
+_UNKNOWN_PROVIDER_REFUSAL = (
+    "harness comparison needs a recorded provider; exclude trials recorded before provider tracking"
+)
+
+# These dimensions fix the harness and model pair, so the trials in a row must
+# also share one provider (task 9): a Codex run against OpenAI directly is
+# never ranked against a run of the same harness and model through a gateway.
+# ``HARNESS_MODEL`` never reaches _check_values (it expands to HARNESS + MODEL),
+# it is listed so a future refactor cannot lose the guard.
+_SINGLE_PROVIDER_DIMENSIONS = frozenset(
+    {
+        ComparisonDimension.AGENT,
+        ComparisonDimension.HARNESS,
+        ComparisonDimension.HARNESS_VERSION,
+        ComparisonDimension.AGENT_MODEL,
+        ComparisonDimension.HARNESS_MODEL,
+    }
+)
 
 # The axes a row must hold fixed. A dimension that does not cover an axis leaves
 # it to vary, so the selection must already have one value for it.
@@ -23,6 +42,7 @@ _COVERAGE: dict[ComparisonDimension, frozenset[str]] = {
     ComparisonDimension.HARNESS_VERSION: frozenset({"harness"}),
     ComparisonDimension.MODEL: frozenset({"model"}),
     ComparisonDimension.AGENT_MODEL: frozenset({"harness", "model"}),
+    ComparisonDimension.PROVIDER: frozenset(),
     ComparisonDimension.STACK: frozenset({"stack"}),
     ComparisonDimension.LANGUAGE: frozenset({"stack"}),
     ComparisonDimension.FRAMEWORK: frozenset({"stack"}),
@@ -97,10 +117,28 @@ def _check_values(dimensions: tuple[ComparisonDimension, ...], trials: list[Tria
     harnesses = {trial.agent.name for trial in trials}
     models = {trial.agent.model_key for trial in trials}
     stacks = {trial.environment.stack for trial in trials}
-    if dimensions == (ComparisonDimension.HARNESS_VERSION,) and (
+    providers = {trial.agent.provider for trial in trials}
+    if dimensions in ((ComparisonDimension.HARNESS_VERSION,), (ComparisonDimension.PROVIDER,)) and (
         len(harnesses) > 1 or len(models) > 1 or len(stacks) > 1
     ):
         raise ValueError(_HARNESS_VERSION_REFUSAL)
+    if _SINGLE_PROVIDER_DIMENSIONS.intersection(dimensions) and (
+        ComparisonDimension.PROVIDER not in dimensions
+    ):
+        # A harness run's provider must be recorded and single: a Codex run
+        # against OpenAI directly is never ranked against a Claude Code run
+        # through OpenRouter, and two unknown-provider trials may have used
+        # different gateways. When PROVIDER is an explicit grouping dimension
+        # the user asked for one row per provider, so the guard is skipped:
+        # rows never rank a direct run against a gateway run, the
+        # comparability_key check in compare_trials still applies regardless,
+        # and unknown-provider trials are pre-endpoint-era direct runs anyway
+        # (custom endpoints did not exist before provider tracking), so
+        # combining them under an explicit provider row is safe.
+        if None in providers:
+            raise ValueError(_UNKNOWN_PROVIDER_REFUSAL)
+        if len(providers) > 1:
+            raise ValueError(_PROVIDER_REFUSAL)
     covered = {axis for dimension in dimensions for axis in _COVERAGE[dimension]}
     mixed = [
         axis
