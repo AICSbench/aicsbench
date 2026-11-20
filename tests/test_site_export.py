@@ -338,8 +338,9 @@ def test_out_may_not_be_a_symlinked_submissions_target(tmp_path: Path) -> None:
     data = tmp_path / "data"
     data.mkdir()
     (data / "submissions").symlink_to(real / "submissions", target_is_directory=True)
-    with pytest.raises(SiteExportError):
-        run_export(data, real / "submissions")
+    for out in (data / "submissions", real / "submissions", real):
+        with pytest.raises(SiteExportError):
+            run_export(data, out)
     assert len(trials_of(real)) == 5
 
 
