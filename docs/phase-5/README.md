@@ -136,11 +136,11 @@ maintainer's setup steps.
 | --- | --- |
 | 1 Harness fields and dimensions | done in [aicsbench/aicsbench#21](https://github.com/AICSbench/aicsbench/pull/21) |
 | 2 Submission bundle and validator | done in [aicsbench/aicsbench#23](https://github.com/AICSbench/aicsbench/pull/23) |
-| 3 `aicsbench submit` | in review in [aicsbench/aicsbench#28](https://github.com/AICSbench/aicsbench/pull/28) |
+| 3 `aicsbench submit` | done in [aicsbench/aicsbench#28](https://github.com/AICSbench/aicsbench/pull/28) |
 | 4 Site export | done in [aicsbench/aicsbench#26](https://github.com/AICSbench/aicsbench/pull/26) |
 | 5 Compare page | not started |
 | 6 Data repository | not started |
 | 10 SvelteKit site | not started |
 | 7 Installed versions | done in [aicsbench/aicsbench#22](https://github.com/AICSbench/aicsbench/pull/22) |
 | 8 Stack versions | not started |
-| 9 Custom endpoints | not started |
+| 9 Custom endpoints | core support merged in [aicsbench/aicsbench#24](https://github.com/AICSbench/aicsbench/pull/24); provider display, filter, and methodology note pending on the site |
