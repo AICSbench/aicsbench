@@ -89,6 +89,11 @@ class EnvironmentRecord(BaseModel):
         default=None, description="Stack image plus the agent CLI layer the agent ran in."
     )
     services: list[str] = Field(default_factory=list)
+    installed_versions: dict[str, str] = Field(
+        default_factory=dict,
+        description="Versions the stack's version probes observed at run time, e.g. "
+        "'language' and 'framework'; optional with a default so older results still load.",
+    )
 
 
 class ToolingRecord(BaseModel):
