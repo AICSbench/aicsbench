@@ -30,7 +30,7 @@ from ai_benchmark.config.loader import (
 from ai_benchmark.config.settings import PlatformSettings
 from ai_benchmark.dashboard import serve_dashboard
 from ai_benchmark.environment.docker import DockerExecutionEnvironment
-from ai_benchmark.errors import BenchmarkError, ConfigurationError
+from ai_benchmark.errors import BenchmarkError, ConfigurationError, StackSelectionError
 from ai_benchmark.logging_config import configure_logging
 from ai_benchmark.models.enums import AuthMode, ComparisonDimension, ToolingMode, TrialStatus
 from ai_benchmark.models.results import TrialResult
@@ -186,12 +186,15 @@ def stacks(ctx: typer.Context) -> None:
     if not catalog:
         console.print(f"No stacks found in {_ctx(ctx).settings.stacks_dir}")
         return
-    table = Table(Column("id", no_wrap=True), "language", "framework", "image", "services")
+    table = Table(
+        Column("id", no_wrap=True), "language", "framework", "@version", "image", "services"
+    )
     for s in catalog.values():
         table.add_row(
             s.id,
             f"{s.language} {s.language_version}",
             f"{s.framework} {s.framework_version}",
+            "yes" if s.framework_version_param else "-",
             s.image or f"build: {s.dockerfile}",
             ", ".join(svc.name for svc in s.services) or "-",
         )
@@ -356,7 +359,12 @@ def run(
     ] = None,
     task: Annotated[Optional[str], typer.Option("--task", help="Benchmark task id.")] = None,
     stacks_opt: Annotated[
-        Optional[str], typer.Option("--stacks", help="Comma-separated stack ids.")
+        Optional[str],
+        typer.Option(
+            "--stacks",
+            help="Comma-separated stack ids; 'id@x.y.z' selects the framework version "
+            "on stacks that accept one (see 'aicsbench stacks').",
+        ),
     ] = None,
     trials: Annotated[Optional[int], typer.Option("--trials", min=1)] = None,
     repairs: Annotated[Optional[int], typer.Option("--repairs", min=0, max=5)] = None,
@@ -425,6 +433,8 @@ def run(
     orchestrator = _ctx(ctx).orchestrator()
     try:
         plan = orchestrator.plan(exp)
+    except StackSelectionError as exc:
+        raise _fail(str(exc), 2) from None
     except BenchmarkError as exc:
         raise _fail(str(exc)) from None
 
@@ -441,7 +451,7 @@ def run(
             t.trial_id,
             t.agent.agent,
             t.agent.model or "(default)",
-            t.stack_id,
+            t.resolved_stack,
             str(t.trial_index + 1),
         )
     console.print(table)

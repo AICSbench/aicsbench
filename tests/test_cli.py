@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from ai_benchmark.cli.app import app
@@ -119,3 +120,41 @@ def test_run_dry_run_parallelism() -> None:
     )
     assert result.exit_code == 0
     assert "parallel 2" in result.output
+
+
+def test_run_dry_run_shows_the_resolved_stack_version() -> None:
+    result = invoke(
+        "run",
+        "--agents",
+        "codex",
+        "--task",
+        "task-management-api",
+        "--stacks",
+        "express-latest@5.2.1,express-latest,express",
+        "--trials",
+        "1",
+        "--dry-run",
+    )
+    assert result.exit_code == 0, result.output
+    assert "3 trial(s)" in result.output
+    for label in ("express-latest@5.2.1", "express-latest@5.3.0", "express@4.21"):
+        assert label in result.output
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [
+        ("express-latest@^5.2", "must be an exact x.y.z version"),
+        ("express-latest@5.2.x", "must be an exact x.y.z version"),
+        ("express-latest@5.2", "must be an exact x.y.z version"),
+        ("express-latest@latest", "must be an exact x.y.z version"),
+        ("express-latest@5.2;rm -rf /", "must be an exact x.y.z version"),
+        ("express@1.0.0", "stack 'express' does not accept a framework version"),
+    ],
+)
+def test_run_rejects_a_bad_stack_version_before_anything_runs(entry: str, message: str) -> None:
+    # No --dry-run: a selection that got through would plan and try to run.
+    result = invoke("run", "--agents", "codex", "--task", "task-management-api", "--stacks", entry)
+    assert result.exit_code == 2, result.output
+    assert message in " ".join(result.output.split())
+    assert "trial id" not in result.output and "Run " not in result.output
