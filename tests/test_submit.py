@@ -6,6 +6,7 @@ GitHub and git go through a fake; no test touches the network or real ``gh``.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tarfile
@@ -442,8 +443,24 @@ def test_private_endpoint_host_is_published_as_custom(
     assert {p: p.read_bytes() for p in (env["results"] / RUN_ID).rglob("*.json")} == stored
 
 
-def test_changed_paths_reports_files_moved_into_the_bundle(tmp_path: Path) -> None:
+def test_changed_paths_reports_files_moved_into_the_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Real local git, no network: a rename out of upstream is not hidden."""
+    # Git must act on the temporary repositories only, never a caller's
+    # repository or configuration (pytest may run inside a git hook).
+    for name in (
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_NAMESPACE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 
     def git(cwd: Path, *args: str) -> None:
         subprocess.run(
