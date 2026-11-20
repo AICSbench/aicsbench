@@ -100,6 +100,34 @@ def test_layout_rejects_missing_required_file(catalog: SpecCatalog, tmp_path: Pa
     assert "layout" in codes(validate_bundle(bundle, catalog))
 
 
+def test_layout_rejects_symlinked_trials_dir(catalog: SpecCatalog, tmp_path: Path) -> None:
+    bundle = copy_bundle(tmp_path)
+    real = tmp_path / "real-trials"
+    shutil.move(bundle / "trials", real)
+    (bundle / "trials").symlink_to(real, target_is_directory=True)
+    problems = validate_bundle(bundle, catalog)
+    assert "layout" in codes(problems)
+    assert "symlink" in problems[0].message
+
+
+def test_layout_requires_log_archive_when_logs_included(
+    catalog: SpecCatalog, tmp_path: Path
+) -> None:
+    bundle = _log_bundle(catalog, tmp_path)
+    (bundle / "logs").mkdir()
+    problems = validate_bundle(bundle, catalog)
+    assert [p.code for p in problems] == ["layout"]
+    assert "no logs/*.tar.gz" in problems[0].message
+
+
+def test_layout_rejects_log_archive_outside_trial_ids(catalog: SpecCatalog, tmp_path: Path) -> None:
+    bundle = _log_bundle(catalog, tmp_path)
+    _add_log(bundle, "trial-999", "harmless")
+    problems = validate_bundle(bundle, catalog)
+    assert [p.code for p in problems] == ["layout"]
+    assert "logs/trial-999.tar.gz" in problems[0].message
+
+
 def test_schema_rejects_broken_json(catalog: SpecCatalog, tmp_path: Path) -> None:
     bundle = copy_bundle(tmp_path)
     (bundle / "submission.json").write_text("{not json", encoding="utf-8")
@@ -116,6 +144,44 @@ def test_schema_rejects_extra_field(catalog: SpecCatalog, tmp_path: Path) -> Non
     problems = validate_bundle(bundle, catalog)
     assert [p.code for p in problems] == ["schema"]
     assert "trials/trial-001.json" in problems[0].path
+
+
+def test_schema_rejects_invalid_utf8(catalog: SpecCatalog, tmp_path: Path) -> None:
+    bundle = copy_bundle(tmp_path)
+    (bundle / "manifest.json").write_bytes(b'{"run_id": "\xff\xfe"}')
+    problems = validate_bundle(bundle, catalog)
+    assert "schema" in codes(problems)
+
+
+def test_schema_rejects_deeply_nested_json(catalog: SpecCatalog, tmp_path: Path) -> None:
+    bundle = copy_bundle(tmp_path)
+    (bundle / "trials" / "trial-001.json").write_text("[" * 10000 + "]" * 10000)
+    problems = validate_bundle(bundle, catalog)
+    assert "schema" in codes(problems)
+
+
+@pytest.mark.parametrize(
+    "submitted_at",
+    ["2026-11-17T08:00:00+02:00", "2026-11-17T08:00:00"],
+)
+def test_schema_rejects_non_utc_submitted_at(
+    catalog: SpecCatalog, tmp_path: Path, submitted_at: str
+) -> None:
+    bundle = copy_bundle(tmp_path)
+    data = read_json(bundle, "submission.json")
+    data["submitted_at"] = submitted_at
+    write_json(bundle, "submission.json", data)
+    problems = validate_bundle(bundle, catalog)
+    assert [p.code for p in problems] == ["schema"]
+
+
+def test_schema_rejects_github_with_at_sign(catalog: SpecCatalog, tmp_path: Path) -> None:
+    bundle = copy_bundle(tmp_path)
+    data = read_json(bundle, "submission.json")
+    data["submitter"]["github"] = "@alice"
+    write_json(bundle, "submission.json", data)
+    problems = validate_bundle(bundle, catalog)
+    assert [p.code for p in problems] == ["schema"]
 
 
 def test_hash_rejects_tampered_file(catalog: SpecCatalog, tmp_path: Path) -> None:
@@ -138,6 +204,32 @@ def test_hash_rejects_missing_file(catalog: SpecCatalog, tmp_path: Path) -> None
     assert "hash" in codes(validate_bundle(bundle, catalog))
 
 
+@pytest.mark.parametrize("entry", ["../escape.txt", "/etc/aicsbench-escape"])
+def test_hash_rejects_escaping_files_entry(
+    catalog: SpecCatalog, tmp_path: Path, entry: str
+) -> None:
+    bundle = copy_bundle(tmp_path)
+    data = read_json(bundle, "submission.json")
+    data["files"][entry] = "0" * 64
+    write_json(bundle, "submission.json", data)
+    problems = validate_bundle(bundle, catalog)
+    assert [p.code for p in problems] == ["hash"]
+    assert problems[0].path == entry
+    assert "escape" in problems[0].message
+
+
+def test_hash_rejects_unreadable_file(catalog: SpecCatalog, tmp_path: Path) -> None:
+    bundle = copy_bundle(tmp_path)
+    locked = bundle / "trials" / "trial-001.json"
+    locked.chmod(0)
+    try:
+        problems = validate_bundle(bundle, catalog)
+    finally:
+        locked.chmod(0o644)
+    assert "hash" in codes(problems)
+    assert any("cannot read" in p.message for p in problems if p.code == "hash")
+
+
 def test_ids_reject_mismatched_run_id(catalog: SpecCatalog, tmp_path: Path) -> None:
     bundle = copy_bundle(tmp_path)
     data = read_json(bundle, "manifest.json")
@@ -153,6 +245,52 @@ def test_ids_reject_mismatched_folder_name(catalog: SpecCatalog, tmp_path: Path)
     renamed = bundle.with_name("run-renamed-001")
     bundle.rename(renamed)
     assert "ids" in codes(validate_bundle(renamed, catalog))
+
+
+def test_ids_reject_duplicate_trial_id(catalog: SpecCatalog, tmp_path: Path) -> None:
+    bundle = copy_bundle(tmp_path)
+    data = read_json(bundle, "trials/trial-001.json")
+    write_json(bundle, "trials/trial-003.json", data)
+    refresh_hashes(bundle, ["trials/trial-003.json"])
+    problems = validate_bundle(bundle, catalog)
+    assert set(codes(problems)) == {"ids"}
+    assert any("duplicate trial_id" in p.message for p in problems)
+
+
+def test_ids_reject_trial_id_that_differs_from_file_name(
+    catalog: SpecCatalog, tmp_path: Path
+) -> None:
+    bundle = copy_bundle(tmp_path)
+    data = read_json(bundle, "trials/trial-001.json")
+    data["trial_id"] = "trial-999"
+    write_json(bundle, "trials/trial-001.json", data)
+    refresh_hashes(bundle, ["trials/trial-001.json"])
+    problems = validate_bundle(bundle, catalog)
+    assert [p.code for p in problems] == ["ids"]
+    assert problems[0].path == "trials/trial-001.json"
+
+
+def test_ids_reject_trial_run_id_mismatch(catalog: SpecCatalog, tmp_path: Path) -> None:
+    bundle = copy_bundle(tmp_path)
+    data = read_json(bundle, "trials/trial-001.json")
+    data["run_id"] = "run-other-001"
+    write_json(bundle, "trials/trial-001.json", data)
+    refresh_hashes(bundle, ["trials/trial-001.json"])
+    problems = validate_bundle(bundle, catalog)
+    assert [p.code for p in problems] == ["ids"]
+    assert "run_id disagrees" in problems[0].message
+
+
+def test_ids_reject_platform_mismatch(catalog: SpecCatalog, tmp_path: Path) -> None:
+    bundle = copy_bundle(tmp_path)
+    data = read_json(bundle, "submission.json")
+    data["platform_version"] = "9.9.9"
+    data["platform_git_commit"] = "0000000"
+    write_json(bundle, "submission.json", data)
+    problems = validate_bundle(bundle, catalog)
+    assert [p.code for p in problems] == ["ids"]
+    assert "platform_version disagrees" in problems[0].message
+    assert "platform_git_commit disagrees" in problems[0].message
 
 
 def test_task_rejects_unknown_task(catalog: SpecCatalog, tmp_path: Path) -> None:
@@ -190,6 +328,20 @@ def test_suite_rejects_hash_that_differs_from_catalog(catalog: SpecCatalog, tmp_
     submission["suite_hash_source"] = "submit"
     write_json(bundle, "submission.json", submission)
     assert "suite" in codes(validate_bundle(bundle, catalog))
+
+
+def test_suite_rejects_manifest_hash_mismatch_for_submit_source(
+    catalog: SpecCatalog, tmp_path: Path
+) -> None:
+    """A recorded manifest hash must match whatever the source of the submission's hash."""
+    bundle = copy_bundle(tmp_path)
+    submission = read_json(bundle, "submission.json")
+    submission["acceptance_suite_sha256"] = "0" * 64
+    submission["suite_hash_source"] = "submit"
+    write_json(bundle, "submission.json", submission)
+    problems = validate_bundle(bundle, catalog, check_catalog=False)
+    assert [p.code for p in problems] == ["suite"]
+    assert "manifest.json" in problems[0].path
 
 
 def test_rebuild_mode_passes_unknown_task_version(catalog: SpecCatalog, tmp_path: Path) -> None:
@@ -263,9 +415,35 @@ def test_duplicate_rejects_same_run_id(catalog: SpecCatalog, tmp_path: Path) -> 
 
 
 def test_duplicate_accepts_itself(catalog: SpecCatalog, tmp_path: Path) -> None:
-    """The bundle being validated is never its own duplicate."""
+    """The bundle being validated is never its own duplicate, even a copy of it is."""
     bundle = copy_bundle(tmp_path)
-    assert validate_bundle(bundle, catalog, against=bundle.parent.parent.parent) == []
+    against = bundle.parent.parent.parent
+    other = against / "other" / "run-fixture-001"
+    other.parent.mkdir(parents=True)
+    shutil.copytree(FIXTURE_BUNDLE, other)
+    problems = validate_bundle(bundle, catalog, against=against)
+    assert [p.code for p in problems] == ["duplicate"]
+    assert problems[0].message == "same run_id as other/run-fixture-001"
+
+
+def test_duplicate_allows_relative_again_dir(
+    catalog: SpecCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle = copy_bundle(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert validate_bundle(bundle, catalog, against=Path("data")) == []
+
+
+def test_duplicate_reports_unreadable_manifest(catalog: SpecCatalog, tmp_path: Path) -> None:
+    bundle = copy_bundle(tmp_path)
+    locked = bundle / "manifest.json"
+    locked.chmod(0)
+    try:
+        problems = validate_bundle(bundle, catalog, against=tmp_path / "data")
+    finally:
+        locked.chmod(0o644)
+    assert "layout" in codes(problems)
+    assert any("cannot read manifest.json" in p.message for p in problems if p.code == "layout")
 
 
 # --- suite hash --------------------------------------------------------------
@@ -283,6 +461,30 @@ def test_suite_sha256_is_stable_and_skips_pycache(tmp_path: Path) -> None:
 
 def test_suite_sha256_of_empty_task() -> None:
     assert suite_sha256(_suiteless_task()) == EMPTY_SHA256
+
+
+def test_suite_sha256_fails_on_unreadable_directory(tmp_path: Path) -> None:
+    suite = tmp_path / "suite"
+    locked = suite / "locked"
+    locked.mkdir(parents=True)
+    (suite / "a.txt").write_bytes(b"a\n")
+    locked.chmod(0)
+    try:
+        with pytest.raises(OSError):
+            suite_sha256(suite)
+    finally:
+        locked.chmod(0o755)
+
+
+def test_suite_sha256_rejects_symlinked_directory(tmp_path: Path) -> None:
+    cases = tmp_path / "cases-a"
+    cases.mkdir()
+    (cases / "test_x.txt").write_bytes(b"a\n")
+    suite = tmp_path / "suite"
+    suite.mkdir()
+    (suite / "tests").symlink_to(cases, target_is_directory=True)
+    with pytest.raises(OSError):
+        suite_sha256(suite)
 
 
 def test_shipped_suite_hashes_are_unchanged(catalog: SpecCatalog) -> None:
@@ -336,8 +538,25 @@ def test_find_secrets_flags_every_pattern(pattern_secret: str) -> None:
 
 def test_find_secrets_flags_secret_keys_with_values() -> None:
     assert find_secrets({"access_token": "abc"}) == ["access_token"]
+    assert find_secrets({"ACCESS_TOKEN": "abc"}) == ["ACCESS_TOKEN"]
+    assert find_secrets({"password": "hunter2"}) == ["password"]  # not an assignment pattern
     assert find_secrets({"SECRET": False}) == []  # non-string value is fine
     assert find_secrets({"db": {"password": ""}}) == []  # empty value is fine
+
+
+def test_find_secrets_redacts_secret_named_keys() -> None:
+    key = "sk-" + "x" * 24
+    assert find_secrets({key: "value"}) == ["<secret-key>"]
+    assert find_secrets({"raw": {key: "v"}}) == ["raw.<secret-key>"]
+
+
+def test_find_secrets_survives_deep_nesting() -> None:
+    deep: object = {"access_token": "abc"}
+    for _ in range(1000):
+        deep = {"nested": deep}
+    paths = find_secrets(deep)
+    assert len(paths) == 1
+    assert paths[0].endswith("access_token")
 
 
 def test_scan_text_flags_jsonl_and_env_lines() -> None:
@@ -346,6 +565,10 @@ def test_scan_text_flags_jsonl_and_env_lines() -> None:
     assert scan_text('2026-11-17 auth {"apikey": "abcd1234"}')
     assert scan_text("nothing secret here") == []
     assert scan_text('"secret": false') == []
+
+
+def test_scan_text_catches_structured_secret_across_lines() -> None:
+    assert scan_text('{"access_token":\n"abcd1234"}') == ["line 1"]
 
 
 def test_secret_scan_has_no_false_positive_on_valid_fixture(catalog: SpecCatalog) -> None:
@@ -406,6 +629,34 @@ def test_log_archive_without_secrets_passes(catalog: SpecCatalog, tmp_path: Path
     assert validate_bundle(bundle, catalog) == []
 
 
+def test_log_archive_rejects_member_over_limit(
+    catalog: SpecCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("ai_benchmark.submission.validate.LOG_TOTAL_LIMIT_BYTES", 10)
+    bundle = _log_bundle(catalog, tmp_path)
+    _add_log(bundle, "trial-001", "x" * 20)
+    problems = validate_bundle(bundle, catalog)
+    assert [p.code for p in problems] == ["layout"]
+    assert "exceeds" in problems[0].message
+
+
+def test_log_archive_rejects_cumulative_size_over_limit(
+    catalog: SpecCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("ai_benchmark.submission.validate.LOG_TOTAL_LIMIT_BYTES", 10)
+    bundle = _log_bundle(catalog, tmp_path)
+    archive = bundle / "logs" / "trial-001.tar.gz"
+    archive.parent.mkdir(exist_ok=True)
+    with tarfile.open(archive, "w:gz") as tar:
+        for name in ("one.log", "two.log"):
+            info = tarfile.TarInfo(name=name)
+            info.size = 6
+            tar.addfile(info, io.BytesIO(b"012345"))
+    refresh_hashes(bundle, ["logs/trial-001.tar.gz"])
+    problems = validate_bundle(bundle, catalog)
+    assert [p.code for p in problems] == ["layout"]
+
+
 # --- manifest back-compat -----------------------------------------------------
 
 
@@ -447,3 +698,14 @@ def test_cli_missing_bundle_is_usage_error() -> None:
     result = runner.invoke(app, [*DIRS, "validate-submission", "/does/not/exist"])
     assert result.exit_code == 2
     assert "not a bundle directory" in result.output
+
+
+def test_cli_batch_flags_same_run_id_across_bundles(tmp_path: Path) -> None:
+    first = copy_bundle(tmp_path)
+    second = tmp_path / "other" / "submissions" / "task-management-api" / "run-fixture-001"
+    second.parent.mkdir(parents=True)
+    shutil.copytree(FIXTURE_BUNDLE, second)
+    result = runner.invoke(app, [*DIRS, "validate-submission", str(first), str(second)])
+    assert result.exit_code == 1, result.output
+    assert "duplicate" in result.output
+    assert f"ok {first}" in result.output
