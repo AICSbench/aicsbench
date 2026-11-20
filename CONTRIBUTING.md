@@ -16,6 +16,18 @@ ruff format --check src tests benchmarks
 mypy src
 ```
 
+GitHub Actions runs these checks on Python 3.10 and 3.13, validates the
+installed CLI and benchmark definitions, and runs the Docker integration
+tests in a separate job. To run the latter locally with a running Docker daemon:
+
+```bash
+BENCHMARK_DOCKER_TESTS=1 pytest tests/integration
+```
+
+The formatter excludes acceptance suites because their exact bytes identify
+published task versions. Lint and the suite-hash regression test still check them;
+see **Benchmark tasks** below before changing a suite.
+
 ## Commit messages
 
 We follow [Conventional Commits 1.0](https://www.conventionalcommits.org/en/v1.0.0/).

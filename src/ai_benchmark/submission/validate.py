@@ -483,9 +483,7 @@ def _report_text_matches(
             # when the member also carries an oversized integer.
             matches += find_secrets(json.loads(text, parse_int=str))
         except RecursionError:
-            problems.append(
-                Problem("layout", where, "JSON member is nested too deeply to parse")
-            )
+            problems.append(Problem("layout", where, "JSON member is nested too deeply to parse"))
         except ValueError:
             pass
     if matches:
