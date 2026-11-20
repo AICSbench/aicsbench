@@ -33,6 +33,8 @@ class FakeGitHub:
         self.repos = repos or {}
         self.is_logged_in = logged_in
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
+        self.pushed_branch: Path | None = None
+        """Files of a ``submit/<run>`` branch already on the fork, if any."""
 
     def logged_in(self) -> bool:
         return self.is_logged_in
@@ -60,6 +62,22 @@ class FakeGitHub:
     def commit(self, repo_dir: Path, message: str, name: str, email: str) -> None:
         self.committed = sorted(p.relative_to(repo_dir).as_posix() for p in repo_dir.rglob("*"))
         self.calls.append(("commit", (message, name, email)))
+
+    def remote_branch_exists(self, repo_dir: Path, branch: str) -> bool:
+        return self.pushed_branch is not None
+
+    def checkout_remote_branch(self, repo_dir: Path, branch: str) -> None:
+        self.calls.append(("checkout", (branch,)))
+        assert self.pushed_branch is not None
+        shutil.copytree(self.pushed_branch, repo_dir, dirs_exist_ok=True)
+
+    def changed_paths(self, repo_dir: Path) -> list[str]:
+        assert self.pushed_branch is not None
+        return sorted(
+            p.relative_to(self.pushed_branch).as_posix()
+            for p in self.pushed_branch.rglob("*")
+            if p.is_file()
+        )
 
     def push(self, repo_dir: Path, branch: str) -> None:
         self.calls.append(("push", (branch,)))
@@ -137,7 +155,8 @@ def test_dry_run_prints_bundle_and_writes_nothing(env: dict[str, Any]) -> None:
 
 def test_out_writes_sanitized_bundle_that_validates(env: dict[str, Any]) -> None:
     out = env["tmp"] / "out"
-    result = submit(env, "--out", str(out), "--with-logs", "--github", "@octo", "--notes", "M3")
+    notes = f"M3, models in {env['tmp'] / 'home' / 'models'}"
+    result = submit(env, "--out", str(out), "--with-logs", "--github", "@octo", "--notes", notes)
     assert result.exit_code == 0, result.output
     bundle = out / "submissions" / TASK_ID / RUN_ID
     assert files_under(bundle) == {
@@ -176,6 +195,7 @@ def test_out_writes_sanitized_bundle_that_validates(env: dict[str, Any]) -> None
     info = json.loads((bundle / "submission.json").read_text())
     assert info["submitter"] == {"name": "Git Name", "github": "octo"}
     assert info["suite_hash_source"] == "run"
+    assert info["notes"] == "M3, models in ~/models"
     assert info["logs_included"] is True
     # results/ is never edited.
     stored = json.loads((env["results"] / RUN_ID / "trials" / "trial-001.json").read_text())
@@ -264,6 +284,11 @@ def test_against_rejects_duplicate_in_out_mode(env: dict[str, Any]) -> None:
 
 def test_pr_mode_issues_commands_in_order(env: dict[str, Any]) -> None:
     fake = env["fake"]
+    path = env["results"] / RUN_ID / "trials" / "trial-001.json"
+    trial = TrialResult.model_validate_json(path.read_text())
+    local_model = str(env["tmp"] / "home" / "models" / "local")
+    agent = trial.agent.model_copy(update={"resolved_model": local_model})
+    path.write_text(trial.model_copy(update={"agent": agent}).model_dump_json())
     result = submit(env, "--name", "Ada")
     assert result.exit_code == 0, result.output
     assert "https://github.com/aicsbench/data/pull/1" in result.output
@@ -280,6 +305,43 @@ def test_pr_mode_issues_commands_in_order(env: dict[str, Any]) -> None:
     assert f"submissions/{TASK_ID}/{RUN_ID}/submission.json" in fake.committed
     for needle in ("codex 0.167.2", "gpt-6-luna", "fastapi", "Trials: 2", "Passed: ", "CC BY 4.0"):
         assert needle in fake.body
+    # The PR body shows what the bundle shows, never a host path.
+    assert "~/models/local" in fake.body
+    assert str(env["tmp"]) not in fake.body
+
+
+def test_pr_mode_resumes_branch_pushed_by_an_earlier_submit(
+    env: dict[str, Any], tmp_path: Path
+) -> None:
+    earlier = tmp_path / "earlier"
+    assert submit(env, "--out", str(earlier)).exit_code == 0
+    fake = env["fake"]
+    fake.pushed_branch = earlier
+    result = submit(env)
+    assert result.exit_code == 0, result.output
+    assert "https://github.com/aicsbench/data/pull/1" in result.output
+    title = f"data: add {TASK_ID} run {RUN_ID}"
+    assert fake.calls == [
+        ("fork", ("aicsbench/data",)),
+        ("clone", ("octo/data",)),
+        ("clone", ("aicsbench/data",)),
+        ("checkout", (f"submit/{RUN_ID}",)),
+        ("pr create", ("aicsbench/data", f"octo:submit/{RUN_ID}", title)),
+    ]
+
+
+def test_pr_mode_refuses_unrelated_branch_with_the_submission_name(
+    env: dict[str, Any], tmp_path: Path
+) -> None:
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / "README.md").write_text("someone else's work\n")
+    fake = env["fake"]
+    fake.pushed_branch = other
+    result = submit(env)
+    assert result.exit_code == 1
+    assert "not an earlier submission" in " ".join(result.output.split())
+    assert [call[0] for call in fake.calls] == ["fork", "clone", "clone", "checkout"]
 
 
 def test_pr_mode_refuses_run_already_merged_upstream_with_stale_fork(
@@ -315,13 +377,15 @@ def test_pr_mode_without_gh_login_points_to_out(env: dict[str, Any]) -> None:
         ("llm.corp.internal", "custom"),
         ("10.20.30.40", "custom"),
         ("gateway", "custom"),
+        ("fd00::1", "custom"),
         ("openrouter.ai", "openrouter.ai"),
     ],
 )
 def test_private_endpoint_host_is_published_as_custom(
     env: dict[str, Any], host: str, published: str
 ) -> None:
-    base_url = f"https://{host}:8443/v1"
+    netloc = f"[{host}]" if ":" in host else host
+    base_url = f"https://{netloc}:8443/v1"
     command = f"codex exec --config model_providers.bench.base_url={base_url} via gateway"
     for trial_id in ("trial-001", "trial-002"):
         path = env["results"] / RUN_ID / "trials" / f"{trial_id}.json"
@@ -349,7 +413,7 @@ def test_private_endpoint_host_is_published_as_custom(
     check = runner.invoke(cli.app, [*DIRS, "validate-submission", str(bundle)])
     assert check.exit_code == 0, check.output
 
-    url = f"https://{published}:8443/v1"
+    url = f"https://{f'[{published}]' if ':' in host else published}:8443/v1"
     trial = json.loads((bundle / "trials" / "trial-001.json").read_text())
     assert trial["agent"]["endpoint_host"] == published
     endpoint = json.loads((bundle / "manifest.json").read_text())["experiment"]["agents"][0]
@@ -363,5 +427,7 @@ def test_private_endpoint_host_is_published_as_custom(
     if published == "custom":
         for file in bundle.rglob("*.json"):
             assert f"//{host}" not in file.read_text(), file
+            if "." in host or ":" in host:
+                assert host not in file.read_text(), file
     # results/ is never edited.
     assert {p: p.read_bytes() for p in (env["results"] / RUN_ID).rglob("*.json")} == stored

@@ -57,6 +57,25 @@ class GitHub:
     def create_branch(self, repo_dir: Path, branch: str) -> None:
         self._run(["git", "checkout", "-b", branch], cwd=repo_dir)
 
+    def remote_branch_exists(self, repo_dir: Path, branch: str) -> bool:
+        """True when ``origin`` (the fork) already has ``branch``."""
+        out = self._run(["git", "ls-remote", "--heads", "origin", branch], cwd=repo_dir)
+        return bool(out)
+
+    def checkout_remote_branch(self, repo_dir: Path, branch: str) -> None:
+        """Fetch ``branch`` from ``origin`` with its parent and check it out."""
+        self._run(
+            ["git", "fetch", "--quiet", "--depth", "2", "origin", f"{branch}:{branch}"],
+            cwd=repo_dir,
+        )
+        self._run(["git", "checkout", "--quiet", branch], cwd=repo_dir)
+
+    def changed_paths(self, repo_dir: Path) -> list[str]:
+        """Paths the checked-out branch's last commit changes."""
+        return self._run(
+            ["git", "diff", "--name-only", "HEAD~1", "HEAD"], cwd=repo_dir
+        ).splitlines()
+
     def commit(self, repo_dir: Path, message: str, author_name: str, author_email: str) -> None:
         """Commit everything in ``repo_dir`` with the submitter as author and committer."""
         self._run(["git", "add", "--all"], cwd=repo_dir)

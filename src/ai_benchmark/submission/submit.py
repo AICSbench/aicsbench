@@ -113,6 +113,7 @@ def build_bundle(
             endpoint["base_url"] = replace.base_url(endpoint["base_url"])
     _write_json(bundle.path / "manifest.json", replace.json(manifest_data))
     (bundle.path / "trials").mkdir()
+    published: list[TrialResult] = []
     for trial in trials:
         data = trial.model_dump(mode="json")
         data["agent"]["endpoint_host"] = replace.endpoint_host(trial.agent.endpoint_host)
@@ -122,7 +123,11 @@ def build_bundle(
             else ""
             for name, value in trial.log_files.items()
         }
-        _write_json(bundle.path / "trials" / f"{trial.trial_id}.json", replace.json(data))
+        sanitized = replace.json(data)
+        _write_json(bundle.path / "trials" / f"{trial.trial_id}.json", sanitized)
+        published.append(TrialResult.model_validate(sanitized))
+    # The PR body is built from these, so it never shows what the bundle hides.
+    bundle.trials = published
 
     files = {
         file.relative_to(bundle.path).as_posix(): hashlib.sha256(file.read_bytes()).hexdigest()
@@ -137,7 +142,7 @@ def build_bundle(
             task_version=task_version,
             submitted_at=(now or datetime.now(timezone.utc)).replace(microsecond=0),
             submitter=submitter,
-            notes=notes,
+            notes=replace.text(notes),
             platform_version=manifest.platform_version,
             platform_git_commit=manifest.platform_git_commit,
             acceptance_suite_sha256=suite_hash,
@@ -215,11 +220,12 @@ class _Redactor:
         ]
         # A single-label host (a Docker service name such as "gateway") would
         # match ordinary words, so in free text it is replaced only inside a URL
-        # (after "//"); dotted hosts (FQDNs, IPs) are replaced everywhere, and
-        # the fields that name the host always are.
+        # (after "//"); dotted hosts (FQDNs, IPv4) and IPv6 literals (also in
+        # their bracketed URL form) are replaced everywhere, and the fields that
+        # name the host always are.
         self.rules += [
             rule
-            if "." in host
+            if "." in host or ":" in host
             else (
                 re.compile(rf"(?<=//){re.escape(host)}(?![A-Za-z0-9.-])", re.IGNORECASE),
                 CUSTOM_ENDPOINT_HOST,
@@ -392,6 +398,8 @@ def open_pull_request(
 
     branch = f"submit/{bundle.run_id}"
     title = pr_title(bundle.task_id, bundle.run_id)
+    if github.remote_branch_exists(fork_dir, branch):
+        return _resume(bundle, catalog, github, data_repo, fork_dir, merged, login, branch)
     github.create_branch(fork_dir, branch)
     target = fork_dir / "submissions" / bundle.task_id / bundle.run_id
     if target.exists():
@@ -399,5 +407,38 @@ def open_pull_request(
     shutil.copytree(bundle.path, target)
     github.commit(fork_dir, title, author_name, f"{author_handle}@users.noreply.github.com")
     github.push(fork_dir, branch)
+    url = github.create_pr(data_repo, f"{login}:{branch}", title, pr_body(bundle), fork_dir)
+    return url, []
+
+
+def _resume(
+    bundle: Bundle,
+    catalog: SpecCatalog,
+    github: GitHub,
+    data_repo: str,
+    fork_dir: Path,
+    merged: Path,
+    login: str,
+    branch: str,
+) -> tuple[str | None, list[Problem]]:
+    """Open the PR for a branch an earlier ``submit`` pushed but could not open a PR for.
+
+    The branch is reused as it is, never overwritten: its bundle must still pass
+    validation against upstream, and it must change nothing but this run's folder.
+    """
+    github.checkout_remote_branch(fork_dir, branch)
+    pushed = fork_dir / "submissions" / bundle.task_id / bundle.run_id
+    prefix = f"submissions/{bundle.task_id}/{bundle.run_id}/"
+    others = [p for p in github.changed_paths(fork_dir) if not p.startswith(prefix)]
+    if not pushed.is_dir() or others:
+        raise SubmissionError(
+            f"branch {branch} already exists on your fork and is not an earlier submission "
+            f"of this run; delete it (`gh api -X DELETE repos/{login}/"
+            f"{data_repo.split('/')[-1]}/git/refs/heads/{branch}`) and run submit again"
+        )
+    problems = validate_bundle(pushed, catalog, against=merged if merged.is_dir() else None)
+    if problems:
+        return None, problems
+    title = pr_title(bundle.task_id, bundle.run_id)
     url = github.create_pr(data_repo, f"{login}:{branch}", title, pr_body(bundle), fork_dir)
     return url, []
