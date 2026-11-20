@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -19,6 +19,13 @@ class Submitter(BaseModel):
 
     name: str
     github: str | None = None
+
+    @field_validator("github")
+    @classmethod
+    def _github_without_at(cls, value: str | None) -> str | None:
+        if value is not None and value.startswith("@"):
+            raise ValueError("github must not include a leading '@'")
+        return value
 
 
 class SubmissionInfo(BaseModel):
@@ -47,6 +54,13 @@ class SubmissionInfo(BaseModel):
     def _schema_version_is_1(cls, value: int) -> int:
         if value != 1:
             raise ValueError("schema_version must be 1")
+        return value
+
+    @field_validator("submitted_at")
+    @classmethod
+    def _submitted_at_is_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError("submitted_at must be UTC (explicit zero UTC offset)")
         return value
 
 

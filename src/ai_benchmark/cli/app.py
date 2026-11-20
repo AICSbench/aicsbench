@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Optional
@@ -34,6 +36,7 @@ from ai_benchmark.orchestrator.orchestrator import BenchmarkOrchestrator
 from ai_benchmark.reporting import export_trials, render_report
 from ai_benchmark.storage.base import ResultFilter
 from ai_benchmark.storage.json_store import JsonResultStore
+from ai_benchmark.submission.models import Problem
 from ai_benchmark.submission.validate import validate_bundle
 
 app = typer.Typer(
@@ -272,20 +275,70 @@ def validate_submission(
     if against is not None and not against.is_dir():
         raise _fail(f"not a directory: {against}", code=2)
     problems_found = False
+    admitted: list[tuple[str | None, str | None]] = []
     for path in paths:
         if not path.is_dir():
             raise _fail(f"not a bundle directory: {path}", code=2)
         problems = validate_bundle(
             path, catalog, against=against, check_catalog=not no_catalog_check
         )
+        if not problems:
+            problems = _batch_duplicates(path, admitted)
         if problems:
             problems_found = True
             for problem in problems:
                 typer.echo(str(problem))
         else:
+            admitted.append(_bundle_identity(path))
             typer.echo(f"ok {path}")
     if problems_found:
         raise typer.Exit(1)
+
+
+def _batch_duplicates(path: Path, admitted: list[tuple[str | None, str | None]]) -> list[Problem]:
+    """Duplicate problems against bundles admitted earlier in this invocation.
+
+    Each ``--against`` comparison is per invocation, so several bundles in one
+    call must not admit the same run twice among themselves.
+    """
+    run_id, manifest_hash = _bundle_identity(path)
+    problems: list[Problem] = []
+    for other_run_id, other_hash in admitted:
+        if run_id is not None and run_id == other_run_id:
+            problems.append(
+                Problem(
+                    "duplicate",
+                    path.name,
+                    "same run_id as an earlier bundle in this invocation",
+                )
+            )
+        elif manifest_hash is not None and manifest_hash == other_hash:
+            problems.append(
+                Problem(
+                    "duplicate",
+                    "manifest.json",
+                    "identical manifest in an earlier bundle in this invocation",
+                )
+            )
+    return problems
+
+
+def _bundle_identity(bundle: Path) -> tuple[str | None, str | None]:
+    """The bundle's run id and manifest.json SHA-256 for duplicate checks."""
+    manifest_file = bundle / "manifest.json"
+    run_id: str | None = None
+    try:
+        data = json.loads(manifest_file.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+        pass
+    else:
+        value = data.get("run_id") if isinstance(data, dict) else None
+        run_id = value if isinstance(value, str) else None
+    try:
+        manifest_hash = hashlib.sha256(manifest_file.read_bytes()).hexdigest()
+    except OSError:
+        manifest_hash = None
+    return run_id, manifest_hash
 
 
 @app.command()

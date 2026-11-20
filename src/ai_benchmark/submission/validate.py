@@ -13,7 +13,6 @@ bundle is valid. Two modes:
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import json
 import re
@@ -35,6 +34,9 @@ M = TypeVar("M", bound=BaseModel)
 
 LOG_TOTAL_LIMIT_BYTES = 50 * 1024 * 1024
 """Maximum uncompressed size of one log archive, per docs/phase-5/schemas.md."""
+
+LOG_READ_CHUNK_BYTES = 1024 * 1024
+"""Log members are read in chunks so the size limit is enforced while reading."""
 
 PUBLIC_ENDPOINT_HOSTS = frozenset({"openrouter.ai", "api.anthropic.com", "api.openai.com"})
 """Gateway hosts whose address may be published (docs/phase-5/schemas.md)."""
@@ -58,9 +60,11 @@ def validate_bundle(
     problems: list[Problem] = []
     submission = _load_model(bundle / "submission.json", SubmissionInfo, problems)
     manifest = _load_model(bundle / "manifest.json", RunManifest, problems)
+    _reject_symlinks(bundle, problems)
     trials = _load_trials(bundle, problems)
 
-    _check_layout(bundle, submission, problems)
+    _check_endpoint_host(trials, problems)
+    _check_layout(bundle, submission, manifest, problems)
     if submission is not None:
         _check_hashes(bundle, submission, problems)
         _check_ids(bundle, submission, manifest, trials, problems)
@@ -69,7 +73,6 @@ def validate_bundle(
         )
     _check_comparable(trials, problems)
     _check_harness(trials, problems)
-    _check_endpoint_host(trials, problems)
     _check_status(trials, problems)
     _check_secrets(bundle, submission, problems)
     _check_duplicate(bundle, manifest, against, problems)
@@ -82,7 +85,9 @@ def _load_model(
     name = label or file.name
     try:
         data = json.loads(file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError):
+        # ValueError covers JSONDecodeError and, on Python 3.11+, the
+        # plain ValueError json.loads raises for very long integers.
         problems.append(Problem("schema", name, f"{name} is missing or not valid JSON"))
         return None
     try:
@@ -96,34 +101,79 @@ def _load_model(
         return None
 
 
+def _reject_symlinks(bundle: Path, problems: list[Problem]) -> None:
+    """Reject every symlink in the bundle.
+
+    ``rglob`` does not follow symlinked directories, so their content would
+    escape every scan.
+    """
+    for file in sorted(bundle.rglob("*")):
+        if file.is_symlink():
+            problems.append(
+                Problem(
+                    "layout",
+                    file.relative_to(bundle).as_posix(),
+                    "symlinks are not allowed in a bundle",
+                )
+            )
+
+
 def _load_trials(bundle: Path, problems: list[Problem]) -> dict[str, TrialResult]:
     trials_dir = bundle / "trials"
     if not trials_dir.is_dir():
         problems.append(Problem("layout", "trials/", "the trials directory is missing"))
         return {}
     trials: dict[str, TrialResult] = {}
+    embedded: dict[str, str] = {}
     for file in sorted(trials_dir.iterdir()):
         if file.is_file() and file.suffix == ".json":
             trial = _load_model(file, TrialResult, problems, label=f"trials/{file.name}")
             if trial is not None:
-                trials[trial.trial_id] = trial
+                if trial.trial_id in embedded:
+                    problems.append(
+                        Problem(
+                            "ids",
+                            f"trials/{file.name}",
+                            f"duplicate trial_id '{trial.trial_id}' "
+                            f"(also in {embedded[trial.trial_id]})",
+                        )
+                    )
+                else:
+                    embedded[trial.trial_id] = file.name
+                trials[file.stem] = trial
     return trials
 
 
-def _check_layout(bundle: Path, submission: SubmissionInfo | None, problems: list[Problem]) -> None:
+def _check_layout(
+    bundle: Path,
+    submission: SubmissionInfo | None,
+    manifest: RunManifest | None,
+    problems: list[Problem],
+) -> None:
     where = bundle.name
     if not (bundle / "submission.json").is_file() or not (bundle / "manifest.json").is_file():
         problems.append(Problem("layout", where, "submission.json and manifest.json are required"))
+    trial_ids = set(manifest.trial_ids) if manifest is not None else set()
     extra = [
         file.relative_to(bundle).as_posix()
         for file in sorted(bundle.rglob("*"))
-        if file.is_file() and not _is_allowed_bundle_file(file, bundle, submission)
+        if file.is_file() and not _is_allowed_bundle_file(file, bundle, submission, trial_ids)
     ]
     if extra:
         problems.append(Problem("layout", where, f"unexpected files: {', '.join(extra)}"))
+    if (
+        submission is not None
+        and submission.logs_included
+        and not (any((bundle / "logs").glob("*.tar.gz")))
+    ):
+        problems.append(
+            Problem("layout", "logs/", "logs_included is true but no logs/*.tar.gz is present")
+        )
 
 
-def _is_allowed_bundle_file(file: Path, bundle: Path, submission: SubmissionInfo | None) -> bool:
+def _is_allowed_bundle_file(
+    file: Path, bundle: Path, submission: SubmissionInfo | None, trial_ids: set[str]
+) -> bool:
     relative = file.relative_to(bundle)
     parts = relative.parts
     if len(parts) == 1 and parts[0] in ("submission.json", "manifest.json"):
@@ -131,19 +181,39 @@ def _is_allowed_bundle_file(file: Path, bundle: Path, submission: SubmissionInfo
     if len(parts) == 2 and parts[0] == "trials" and parts[1].endswith(".json"):
         return True
     if len(parts) == 2 and parts[0] == "logs" and parts[1].endswith(".tar.gz"):
-        return submission is None or submission.logs_included
+        if submission is None:
+            return True
+        stem = parts[1].removesuffix(".tar.gz")
+        return submission.logs_included and stem in trial_ids
     return False
 
 
 def _check_hashes(bundle: Path, submission: SubmissionInfo, problems: list[Problem]) -> None:
     for relative, expected in submission.files.items():
         file = bundle / relative
+        try:
+            escapes = (
+                Path(relative).is_absolute()
+                or ".." in Path(relative).parts
+                or not file.resolve().is_relative_to(bundle)
+            )
+        except (OSError, RuntimeError) as exc:
+            # A self-referencing symlink makes Path.resolve raise RuntimeError.
+            problems.append(Problem("hash", relative, f"cannot resolve the file path: {exc}"))
+            continue
+        if escapes:
+            problems.append(Problem("hash", relative, "files path escapes the bundle"))
+            continue
         if not file.is_file():
             problems.append(
                 Problem("hash", relative, "listed in files but missing from the bundle")
             )
             continue
-        actual = hashlib.sha256(file.read_bytes()).hexdigest()
+        try:
+            actual = hashlib.sha256(file.read_bytes()).hexdigest()
+        except OSError as exc:
+            problems.append(Problem("hash", relative, f"cannot read the file: {exc}"))
+            continue
         if actual != expected.lower():
             problems.append(Problem("hash", relative, "SHA-256 does not match files"))
     if (bundle / "submission.json").is_file():
@@ -172,9 +242,25 @@ def _check_ids(
         run_ids.add(manifest.run_id)
         task_ids.add(str(manifest.task_snapshot.get("id")))
         task_versions.add(str(manifest.task_snapshot.get("version")))
-    for trial in trials.values():
+        platform_mismatches = [
+            f"{field} disagrees with the manifest"
+            for field in ("platform_version", "platform_git_commit")
+            if getattr(manifest, field) != getattr(submission, field)
+        ]
+        if platform_mismatches:
+            problems.append(Problem("ids", "submission.json", "; ".join(platform_mismatches)))
+    for stem, trial in trials.items():
         task_ids.add(trial.task_id)
         task_versions.add(trial.task_version)
+        run_ids.add(trial.run_id)
+        if trial.trial_id != stem:
+            problems.append(
+                Problem(
+                    "ids",
+                    f"trials/{stem}.json",
+                    f"embedded trial_id '{trial.trial_id}' does not match the file name",
+                )
+            )
     if len(run_ids) > 1:
         problems.append(
             Problem(
@@ -243,16 +329,17 @@ def _check_task_and_suite(
                         f"(ships '{spec.version}')",
                     )
                 )
-    if submission.suite_hash_source == "run":
-        recorded = manifest.acceptance_suite_sha256 if manifest is not None else None
-        if recorded != submission.acceptance_suite_sha256:
-            problems.append(
-                Problem(
-                    "suite",
-                    "manifest.json",
-                    "manifest acceptance_suite_sha256 does not match submission.json",
-                )
+    recorded = manifest.acceptance_suite_sha256 if manifest is not None else None
+    if (submission.suite_hash_source == "run" or recorded is not None) and (
+        recorded != submission.acceptance_suite_sha256
+    ):
+        problems.append(
+            Problem(
+                "suite",
+                "manifest.json",
+                "manifest acceptance_suite_sha256 does not match submission.json",
             )
+        )
     if check_catalog and spec is not None:
         try:
             catalog_hash = suite_sha256(spec)
@@ -268,34 +355,6 @@ def _check_task_and_suite(
                         f"({catalog_hash})",
                     )
                 )
-
-
-def _check_comparable(trials: dict[str, TrialResult], problems: list[Problem]) -> None:
-    keys = {trial.comparability_key() for trial in trials.values()}
-    if len(keys) > 1:
-        problems.append(
-            Problem("comparable", "trials/", "trials do not share one comparability_key")
-        )
-
-
-def _check_harness(trials: dict[str, TrialResult], problems: list[Problem]) -> None:
-    for trial in sorted(trials.values(), key=lambda item: item.trial_id):
-        missing = [
-            field
-            for field, value in (
-                ("agent.name", trial.agent.name),
-                ("agent.version", trial.agent.version),
-            )
-            if not value
-        ]
-        if missing:
-            problems.append(
-                Problem(
-                    "harness",
-                    f"trials/{trial.trial_id}.json",
-                    f"missing {', '.join(missing)}; public trials need a harness version",
-                )
-            )
 
 
 def _check_endpoint_host(trials: dict[str, TrialResult], problems: list[Problem]) -> None:
@@ -316,18 +375,46 @@ def _check_endpoint_host(trials: dict[str, TrialResult], problems: list[Problem]
         )
 
 
+def _check_comparable(trials: dict[str, TrialResult], problems: list[Problem]) -> None:
+    keys = {trial.comparability_key() for trial in trials.values()}
+    if len(keys) > 1:
+        problems.append(
+            Problem("comparable", "trials/", "trials do not share one comparability_key")
+        )
+
+
+def _check_harness(trials: dict[str, TrialResult], problems: list[Problem]) -> None:
+    for stem, trial in sorted(trials.items()):
+        missing = [
+            field
+            for field, value in (
+                ("agent.name", trial.agent.name),
+                ("agent.version", trial.agent.version),
+            )
+            if not value
+        ]
+        if missing:
+            problems.append(
+                Problem(
+                    "harness",
+                    f"trials/{stem}.json",
+                    f"missing {', '.join(missing)}; public trials need a harness version",
+                )
+            )
+
+
 def _check_status(trials: dict[str, TrialResult], problems: list[Problem]) -> None:
-    running = {
-        trial.trial_id
-        for trial in trials.values()
+    unfinished = sorted(
+        stem
+        for stem, trial in trials.items()
         if trial.status in (TrialStatus.PENDING, TrialStatus.RUNNING)
-    }
-    if running:
+    )
+    if unfinished:
         problems.append(
             Problem(
                 "status",
                 "trials/",
-                f"unfinished trials: {', '.join(sorted(running))}",
+                f"unfinished trials: {', '.join(unfinished)}",
             )
         )
 
@@ -342,7 +429,7 @@ def _check_secrets(
         else:
             try:
                 data = json.loads(file.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except (OSError, UnicodeDecodeError, ValueError, RecursionError):
                 continue
         matches = find_secrets(data)
         if matches:
@@ -377,9 +464,7 @@ def _check_log_archive(bundle: Path, archive: Path, problems: list[Problem]) -> 
                 extracted = tar.extractfile(member)
                 if extracted is None:
                     continue
-                data = extracted.read()
-                total += len(data)
-                if total > LOG_TOTAL_LIMIT_BYTES:
+                if member.size > LOG_TOTAL_LIMIT_BYTES - total:
                     problems.append(
                         Problem(
                             "layout",
@@ -388,7 +473,24 @@ def _check_log_archive(bundle: Path, archive: Path, problems: list[Problem]) -> 
                         )
                     )
                     return
-                text = data.decode("utf-8", errors="replace")
+                data = bytearray()
+                # Bound each read by the remaining allowance plus one byte,
+                # so an oversized member can never be read fully.
+                while chunk := extracted.read(
+                    min(LOG_READ_CHUNK_BYTES, LOG_TOTAL_LIMIT_BYTES - total + 1)
+                ):
+                    data += chunk
+                    total += len(chunk)
+                    if total > LOG_TOTAL_LIMIT_BYTES:
+                        problems.append(
+                            Problem(
+                                "layout",
+                                relative,
+                                f"log archive exceeds {LOG_TOTAL_LIMIT_BYTES} bytes uncompressed",
+                            )
+                        )
+                        return
+                text = bytes(data).decode("utf-8", errors="replace")
                 _report_text_matches(relative, name, text, problems)
     except (tarfile.TarError, OSError) as exc:
         problems.append(Problem("layout", relative, f"cannot read log archive: {exc}"))
@@ -400,8 +502,17 @@ def _report_text_matches(
     where = f"{archive_relative}#{member_name}"
     matches = scan_text(text)
     if member_name.endswith(".json"):
-        with contextlib.suppress(json.JSONDecodeError):
-            matches += find_secrets(json.loads(text))
+        try:
+            # parse_int bypasses Python's integer-digit limit, so an escaped
+            # key such as "access\u005ftoken" still reaches find_secrets even
+            # when the member also carries an oversized integer.
+            matches += find_secrets(json.loads(text, parse_int=str))
+        except RecursionError:
+            problems.append(
+                Problem("layout", where, "JSON member is nested too deeply to parse")
+            )
+        except ValueError:
+            pass
     if matches:
         problems.append(Problem("secret", where, f"possible secret: {', '.join(matches)}"))
 
@@ -409,16 +520,23 @@ def _report_text_matches(
 def _check_duplicate(
     bundle: Path, manifest: RunManifest | None, against: Path | None, problems: list[Problem]
 ) -> None:
-    if against is None or manifest is None:
+    if against is None:
         return
-    manifest_hash = (
-        _sha256_file(bundle / "manifest.json") if (bundle / "manifest.json").is_file() else None
-    )
-    for candidate in sorted(against.rglob("submission.json")):
+    root = against.resolve()
+    manifest_file = bundle / "manifest.json"
+    manifest_hash: str | None = None
+    if manifest_file.is_file():
+        try:
+            manifest_hash = hashlib.sha256(manifest_file.read_bytes()).hexdigest()
+        except OSError as exc:
+            problems.append(Problem("layout", "manifest.json", f"cannot read manifest.json: {exc}"))
+    if manifest is None:
+        return
+    for candidate in sorted(root.rglob("submission.json")):
+        relative = candidate.parent.relative_to(root)
         other = candidate.parent.resolve()
         if other == bundle:
             continue
-        relative = candidate.parent.relative_to(against.resolve())
         if len(relative.parts) < 2:  # not submissions/<task_id>/<run_id>
             continue
         duplicate_of = relative.as_posix()
@@ -437,11 +555,14 @@ def _check_duplicate(
 def _read_submission_run_id(file: Path) -> str | None:
     try:
         data = json.loads(file.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError):
         return None
     run_id = data.get("run_id") if isinstance(data, dict) else None
     return run_id if isinstance(run_id, str) else None
 
 
-def _sha256_file(file: Path) -> str:
-    return hashlib.sha256(file.read_bytes()).hexdigest()
+def _sha256_file(file: Path) -> str | None:
+    try:
+        return hashlib.sha256(file.read_bytes()).hexdigest()
+    except OSError:
+        return None

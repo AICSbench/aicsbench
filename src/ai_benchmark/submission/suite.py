@@ -53,8 +53,16 @@ def _as_spec_or_suite(path: Path) -> str:
 def _hash_suite_dir(root: Path) -> str:
     if not root.is_dir():
         raise FileNotFoundError(f"acceptance suite directory not found: {root}")
+
+    def onerror(error: OSError) -> None:
+        raise error
+
     files: list[tuple[str, Path]] = []
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root, onerror=onerror):
+        for name in dirnames:
+            path = Path(dirpath) / name
+            if path.is_symlink():
+                raise OSError(f"symlinked directory in acceptance suite: {path}")
         dirnames[:] = sorted(name for name in dirnames if name not in SKIP_DIRS)
         for name in sorted(filenames):
             if name.endswith(".pyc"):

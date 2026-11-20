@@ -50,45 +50,74 @@ _STRUCTURED_SECRET = re.compile(
 
 
 def find_secrets(value: Any, _prefix: str = "") -> list[str]:
-    """JSON paths (of keys and values) in ``value`` that look like secrets."""
+    """JSON paths (of keys and values) in ``value`` that look like secrets.
+
+    Walks iteratively so deeply nested JSON cannot hit the recursion limit.
+    A key that is itself a secret is redacted in the returned path so the
+    credential never leaks into reports; an ordinary secret-named key is
+    kept (``raw.access_token``). Values never appear in the paths.
+    """
     matches: list[str] = []
-    if isinstance(value, dict):
-        for key, item in value.items():
-            path = f"{_prefix}.{key}" if _prefix else str(key)
-            if _matches_patterns(str(key)) or (
-                str(key).lower() in SECRET_KEYS and isinstance(item, str) and item
-            ):
-                matches.append(path)
-            matches.extend(find_secrets(item, path))
-    elif isinstance(value, list):
-        for index, item in enumerate(value):
-            matches.extend(find_secrets(item, f"{_prefix}[{index}]"))
-    elif isinstance(value, str) and _matches_patterns(value):
-        matches.append(_prefix or "<value>")
+    stack: list[tuple[Any, str, str | None]] = [(value, _prefix, None)]
+    while stack:
+        node, prefix, key = stack.pop()
+        if key is not None and (
+            _matches_patterns(str(key))
+            or (str(key).lower() in SECRET_KEYS and isinstance(node, str) and node)
+        ):
+            matches.append(prefix)
+        if isinstance(node, dict):
+            for child_key, item in reversed(list(node.items())):
+                segment = _path_segment(str(child_key))
+                path = f"{prefix}.{segment}" if prefix else segment
+                stack.append((item, path, child_key))
+        elif isinstance(node, list):
+            for index, item in reversed(list(enumerate(node))):
+                stack.append((item, f"{prefix}[{index}]", None))
+        elif isinstance(node, str) and _matches_patterns(node):
+            matches.append(prefix or "<value>")
     return matches
+
+
+def _path_segment(key: str) -> str:
+    """The path segment for a JSON key; a secret-bearing key is redacted."""
+    return "<secret-key>" if _matches_patterns(key) else key
 
 
 def scan_text(text: str) -> list[str]:
     """Locations in a log file's text that look like secrets.
 
-    Each line is checked against :data:`SECRET_PATTERNS` and the structured
-    quoted-value pattern; every line that parses as JSON is additionally
-    checked with :func:`find_secrets`, so ``SECRET_KEYS`` apply to JSONL logs.
+    Structured assignments may span lines, so the whole text is checked with
+    the structured pattern first and the line of each match is reported.
+    Each line is then checked against :data:`SECRET_PATTERNS`, and every line
+    that parses as JSON (JSONL logs) is additionally checked with
+    :func:`find_secrets`, so ``SECRET_KEYS`` apply there too.
     """
     matches: list[str] = []
+    # finditer yields matches in order, so newline counts accumulate across
+    # the spans between matches instead of rescanning from position 0.
+    structured_lines: set[int] = set()
+    previous = 0
+    newlines = 0
+    for match in _STRUCTURED_SECRET.finditer(text):
+        newlines += text.count("\n", previous, match.start())
+        previous = match.start()
+        structured_lines.add(newlines + 1)
     for number, line in enumerate(text.splitlines(), 1):
         where = f"line {number}"
-        if any(pattern.search(line) for pattern in SECRET_PATTERNS) or _STRUCTURED_SECRET.search(
-            line
-        ):
+        if number in structured_lines or any(pattern.search(line) for pattern in SECRET_PATTERNS):
             matches.append(where)
             continue
         stripped = line.strip()
         if not stripped.startswith(("{", "[")):
             continue
         try:
-            data = json.loads(stripped)
-        except json.JSONDecodeError:
+            # parse_int bypasses Python's integer-digit limit, so a line with
+            # an oversized integer is still parsed and its keys scanned
+            # instead of being dropped as non-JSON.
+            data = json.loads(stripped, parse_int=str)
+        except (ValueError, RecursionError):
+            # ValueError covers JSONDecodeError and any parse failure.
             continue
         matches.extend(
             f"{where} {path}" if path != "<value>" else where for path in find_secrets(data)
