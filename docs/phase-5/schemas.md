@@ -207,8 +207,24 @@ and these keys added only in the export:
 ]}
 ```
 
-- `kind` is one of `home`, `task`, `harness`, `model`, `stack`, `run`,
-  `compare`, `methodology`. One template per kind in `aicsbench/web`.
+- `kind` is one of `home`, `task`, `harness`, `model`, `stack`,
+  `leaderboard`, `run`, `compare`, `methodology`. One template per kind in
+  `aicsbench/web`.
+- `fixed` names every value the section holds fixed: the comparability key
+  (`task`, `task_version`, `tooling_mode`, `auth_mode`, `max_repairs`,
+  `max_parallel`), `suite_sha256`, and the page's "per ..." axes (`stack`,
+  `harness`, `model`; `model` is the model key). On `/leaderboard/` it is only
+  `stack`.
+- `verified_only: true` sections hold verified runs only; `false` sections
+  hold community (unverified) runs only, never both.
+- `/leaderboard/` sections have empty `rows` and a `matrix` instead:
+  `{"columns": [{"task", "task_version", "path", "refused"}], "rows":
+  [{"value", "cells": [Row or null, ...], "overall": {"success_rate",
+  "covered", "columns", "mean_rank", "complete"}}]}`, written from
+  `comparison.compare_matrix`. Other sections have `matrix: null`.
+- `/runs/<run_id>/` pages have no sections; their trial rows are the
+  `data/trials.json` rows with that `run_id`, and `params.bundle` is the
+  bundle's folder in the data repository.
 - `rows` are `dataclasses.asdict(comparison.ComparisonRow)` plus
   `success_rate` (`passed / trials`), in the order `compare_trials` returns
   them. A `null` mean (no timed or costed trials) renders as "unavailable",

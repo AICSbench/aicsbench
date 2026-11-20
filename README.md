@@ -8,8 +8,9 @@ languages and frameworks.
 > built-in Claude Code, Codex CLI and OpenCode adapters
 > ([docs/agents.md](docs/agents.md)). Repair attempts, bounded parallel runs,
 > comparison reports, a local dashboard, submission validation, and installed
-> language/framework version recording are available. The submit command and
-> public site export are still planned in [Phase 5](docs/phase-5/README.md). See
+> language/framework version recording are available, and `aicsbench site
+> export` writes the public site's data ([docs/phase-5/site-export.md](docs/phase-5/site-export.md)).
+> The submit command is still planned in [Phase 5](docs/phase-5/README.md). See
 > [ARCHITECTURE.md](ARCHITECTURE.md) for the full vision.
 
 ## Install (development)
@@ -42,6 +43,8 @@ aicsbench results [--harness-version 0.167.2 --stack Y --mode standard --not-rat
 aicsbench compare --run RUN_ID --by stack [--agent codex --model gpt-6-luna]
 aicsbench compare --run RUN_ID --by stack,model
 aicsbench compare --run RUN_ID --by harness_version
+aicsbench compare --by model --tasks url-shortener-api,task-management-api@2 --agent claude
+aicsbench site export --data ../data --out export --base-url https://aicsbench.github.io/web/
 aicsbench export --run RUN_ID --format csv > trials.csv
 aicsbench export --run RUN_ID --format jsonl > trials.jsonl
 aicsbench report --run RUN_ID --by stack > report.md
@@ -50,7 +53,10 @@ aicsbench dashboard --port 8765
 
 In results, the agent CLI is called the **harness** (`claude`, `codex`,
 `opencode`); `--by harness_version` compares the versions it reported, and
-`--by` takes up to three comma-separated dimensions.
+`--by` takes up to three comma-separated dimensions. `--tasks` (alias
+`--matrix`) compares the same groups across several tasks: one column per task
+(newest version, or `<id>@<version>`), each exactly the single-task comparison,
+plus an overall success rate, coverage and mean rank per row.
 
 Use `--repairs N` to let a failed acceptance suite trigger up to N more agent
 attempts in the same workspace (default 0, maximum 5). Use `--parallel N` to

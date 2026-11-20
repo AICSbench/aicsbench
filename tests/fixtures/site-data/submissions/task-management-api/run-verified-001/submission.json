@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "run_id": "run-verified-001",
+  "task_id": "task-management-api",
+  "task_version": "2",
+  "submitted_at": "2026-11-18T00:00:00Z",
+  "submitter": {
+    "name": "Verified Submitter",
+    "github": "verified-submitter"
+  },
+  "notes": "Verified fixture run.",
+  "platform_version": "0.1.0",
+  "platform_git_commit": "3547a18",
+  "acceptance_suite_sha256": "bdb9517ac7138804403bef6c0ea36941de29d5cb1fb51a33448f6360c556d20b",
+  "suite_hash_source": "run",
+  "logs_included": false,
+  "files": {
+    "manifest.json": "ef3787c67b110a7835c2133f80148422c78e71f9b4c8c90c452f7436adefcd64",
+    "trials/trial-001.json": "7b691ea2d814089be46af1b905f5c63dcdfccd101ffdb8718c6147d752d023c9",
+    "trials/trial-002.json": "11fd1fb2b3009139c527775fdef9f7cc79144a26d799b58105992fb9d3450ecc",
+    "trials/trial-003.json": "bcfea9c1340ad24f024476f810e9ed2738204d3543a3429a34fef361cf1c376a"
+  }
+}
