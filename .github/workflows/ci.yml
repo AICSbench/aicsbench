@@ -39,6 +39,10 @@ jobs:
       - run: ruff format --check src tests benchmarks
       - run: mypy src
       - run: pytest
+      # The loader regression must run, not skip: the log line names it with
+      # PASSED, since the pytest summary alone does not identify skips.
+      - name: Confirm the OpenCode loader regression ran against the pinned CLI
+        run: pytest -o addopts='' -v tests/test_custom_endpoints.py::test_opencode_inline_config_beats_workspace_config_in_the_real_loader
       - name: Check installed CLI and benchmark definitions
         run: |
           aicsbench --help
