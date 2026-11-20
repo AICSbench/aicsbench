@@ -318,11 +318,14 @@ class DockerExecutionEnvironment(ExecutionEnvironment):
                 raise ExecutionEnvironmentError(f"stack Dockerfile not found: {dockerfile}")
             text = dockerfile.read_text(encoding="utf-8")
             # A stack that takes a version builds one image per version, so two
-            # versions never share a cached image.
+            # versions never share a cached image. Docker repository names are
+            # lowercase; the exact version (case included) is part of the hash.
             name = f"stack-{stack.id}"
+            key = _short_hash(text, _hash_dir(context))
             if stack.framework_version_param:
-                name += f"-{stack.framework_version}"
-            tag = f"ai-benchmark/{name}:{_short_hash(text, _hash_dir(context))}"
+                name += f"-{stack.framework_version.lower()}"
+                key = _short_hash(text, _hash_dir(context), stack.framework_version)
+            tag = f"ai-benchmark/{name}:{key}"
             built = False
             with self._image_lock:
                 if not self._image_exists(tag):

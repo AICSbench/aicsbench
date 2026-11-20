@@ -267,6 +267,40 @@ def test_declared_version_keeps_the_plain_stack_label(
     assert env.exec_env[setup[-1]] == {"FRAMEWORK_VERSION": "5.3.0"}
 
 
+FASTAPI_FRAMEWORK_PROBE = 'python -c "import fastapi; print(fastapi.__version__)"'
+
+
+@pytest.mark.parametrize(("installed", "changed"), [("0.100.0b1", False), ("0.100.0", True)])
+def test_python_prerelease_is_compared_as_a_release(
+    env_settings: PlatformSettings, installed: str, changed: bool
+) -> None:
+    # pip installs 'fastapi==0.100.0-beta.1' as the release that reports '0.100.0b1'.
+    env = FakeEnvironment(probe_results={FASTAPI_FRAMEWORK_PROBE: probe_result(installed)})
+    o = build(env_settings, env)
+    o.run(experiment(stacks=["fastapi-latest@0.100.0-beta.1"]), run_id="r-pre")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-pre")))
+    assert r.environment.framework_version == "0.100.0-beta.1"
+    assert r.environment.installed_versions["framework"] == installed
+    assert r.environment.framework_version_changed is changed
+
+
+def test_version_change_is_recorded_when_acceptance_setup_fails(
+    env_settings: PlatformSettings,
+) -> None:
+    env = FakeEnvironment(
+        fail_on="build_image", probe_results={EXPRESS_FRAMEWORK_PROBE: probe_result("5.3.0")}
+    )
+    o = build(env_settings, env)
+    o.run(experiment(stacks=["express-latest@5.2.1"]), run_id="r-infra")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-infra")))
+    assert r.status is TrialStatus.INFRA_ERROR
+    assert r.environment.framework_version_changed is True
+    assert r.error == (
+        "build_image failed; version changed during trial: express 5.3.0 is installed, "
+        "5.2.1 was selected"
+    )
+
+
 def test_selected_version_without_framework_probe_output_is_not_checked(
     env_settings: PlatformSettings,
 ) -> None:

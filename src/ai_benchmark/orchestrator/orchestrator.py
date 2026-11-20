@@ -21,6 +21,7 @@ from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from pathlib import Path
 
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_benchmark import __version__
@@ -76,6 +77,20 @@ _VERSION_PROBE_TIMEOUT_SECONDS = 30
 # Start of the note recorded in a trial's error when the installed framework is not
 # the selected version; the site marks such trials as "version changed during trial".
 VERSION_CHANGED_NOTE = "version changed during trial"
+
+
+def _same_version(stack: StackSpec, installed: str, selected: str) -> bool:
+    """Whether ``installed`` is the ``selected`` release.
+
+    Python packages report their version in PEP 440 normal form, so a selected
+    '0.100.0-beta.1' is installed as '0.100.0b1'; compare those as releases.
+    """
+    if stack.language == "python":
+        try:
+            return Version(installed) == Version(selected)
+        except InvalidVersion:
+            pass
+    return installed == selected
 
 
 class PreflightIssue(BaseModel):
@@ -496,7 +511,6 @@ class BenchmarkOrchestrator:
                     f"{original_prompt}\n\nYour previous implementation failed the acceptance "
                     f"tests. Repair the existing workspace. Test failures:\n{feedback}"
                 )
-            self._check_selected_version(trial, stack, result)
 
         except (ExecutionEnvironmentError, ConfigurationError, AgentExecutionError) as exc:
             log.error("trial %s failed: %s", trial.trial_id, exc)
@@ -511,6 +525,9 @@ class BenchmarkOrchestrator:
                 self._cleanup(handle, log_dir, result)
             if not self.settings.keep_workspaces and result.status is not TrialStatus.INFRA_ERROR:
                 self.workspaces.remove(plan.run_id, trial.trial_id)
+        # Also after an infrastructure error: probes that already ran still show
+        # whether the agent changed the framework version.
+        self._check_selected_version(trial, stack, result)
         result.finished_at = utcnow()
         result.metrics.performance.total_wall_clock_seconds = Metric[float].of(
             wall.stop(), MetricSource.MEASURED, unit="s"
@@ -680,7 +697,7 @@ class BenchmarkOrchestrator:
         installed = result.environment.installed_versions.get("framework")
         if not stack.framework_version_param or installed is None:
             return
-        changed = installed != stack.framework_version
+        changed = not _same_version(stack, installed, stack.framework_version)
         result.environment.framework_version_changed = changed
         if not changed:
             return
