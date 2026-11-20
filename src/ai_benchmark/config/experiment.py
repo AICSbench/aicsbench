@@ -88,13 +88,18 @@ class EndpointConfig(StrictModel):
             hex_host = host.startswith(("0x", "0X")) and all(
                 c in "0123456789abcdefABCDEF" for c in host[2:]
             )
-            if host.isdigit() or hex_host:
-                # WHATWG URL parsing reads dotless integer hosts as IPv4
-                # addresses in decimal ('16909060') or hexadecimal
-                # ('0x01020304') notation, so either spelling is an IP
-                # literal, not a Docker service name.
-                with contextlib.suppress(ValueError):
-                    address = ipaddress.ip_address(int(host, 16 if hex_host else 10))
+        else:
+            hex_host = False
+        numeric_host = host.isdigit() or hex_host
+        if numeric_host:
+            # WHATWG URL parsing (what HTTP clients use) reads dotless integer
+            # hosts as IPv4: decimal ('16909060'), hexadecimal ('0x01020304'),
+            # or octal when a leading zero is present ('0167772160' is not
+            # 10.0.0.0). Classify with those rules so the validator agrees
+            # with where the client will actually connect.
+            base = 16 if hex_host else (8 if host.startswith("0") and len(host) > 1 else 10)
+            with contextlib.suppress(ValueError):
+                address = ipaddress.ip_address(int(host, base))
         if parts.scheme == "https":
             return v
         if address is not None:
@@ -104,6 +109,14 @@ class EndpointConfig(StrictModel):
                     f"service name, not the public address '{host}'; use https://"
                 )
             return v
+        if numeric_host:
+            # A numeric host the parser could not classify (e.g. beyond the
+            # IPv4 range) is not a Docker service name either; refuse plain
+            # http instead of letting it through under the bare-name rule.
+            raise ValueError(
+                f"plain http:// is only allowed for localhost, a private IP or a Docker "
+                f"service name, not the numeric host '{host}'; use https://"
+            )
         if host == "localhost" or "." not in host:  # bare host: a Docker service name
             return v
         raise ValueError(

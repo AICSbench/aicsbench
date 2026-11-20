@@ -157,11 +157,23 @@ def test_endpoint_rejects_an_invalid_port(base_url: str) -> None:
         "http://16909060",  # the integer form of 1.2.3.4: a public IP, dotless
         "http://0x01020304",  # the hex form of the same public IP
         "http://[2001:4860:4860::8888]/v1",  # a public IPv6 literal
+        # WHATWG URL parsing reads a leading zero as octal, so these connect
+        # to public addresses (1.223.244.112 and 64.0.0.0), not to the private
+        # or non-existent decimal readings.
+        "http://0167772160/v1",
+        "http://010000000000/v1",
     ],
 )
 def test_endpoint_rejects_plain_http_to_a_public_ip_literal(base_url: str) -> None:
     with pytest.raises(ValueError, match="plain http"):
         EndpointConfig(provider="openrouter", base_url=base_url, api_key_env=KEY_ENV)
+
+
+def test_endpoint_allows_https_to_an_octal_numeric_host() -> None:
+    # Only plain http is restricted; https to the same host stays allowed.
+    assert EndpointConfig(
+        provider="openrouter", base_url="https://0167772160/v1", api_key_env=KEY_ENV
+    )
 
 
 def test_endpoint_allows_plain_http_to_a_private_hex_ip_literal() -> None:
@@ -220,18 +232,22 @@ def test_selection_key_adds_the_endpoint_identity_only_with_an_endpoint() -> Non
 def test_selection_key_separates_endpoints_differing_in_port_or_path(
     env_settings: Any,
 ) -> None:
-    other_port = endpoint_payload(
-        provider="litellm", base_url="https://gw.example.com:4001/v1", api_key_env="LITELLM_KEY"
-    )
-    other_path = endpoint_payload(
-        provider="litellm", base_url="https://gw.example.com/v2", api_key_env="LITELLM_KEY"
-    )
-    keys = {
-        AgentSelection.model_validate(selection("codex", "m")).key,
-        AgentSelection.model_validate({**selection("codex", "m"), "endpoint": other_port}).key,
-        AgentSelection.model_validate({**selection("codex", "m"), "endpoint": other_path}).key,
-    }
-    assert len(keys) == 3
+    baseline = AgentSelection.model_validate(selection("codex", "m")).key
+    other_port = AgentSelection.model_validate(
+        {
+            **selection("codex", "m"),
+            "endpoint": endpoint_payload(base_url="https://openrouter.ai:4001/api/v1"),
+        }
+    ).key
+    other_path = AgentSelection.model_validate(
+        {
+            **selection("codex", "m"),
+            "endpoint": endpoint_payload(base_url="https://openrouter.ai/api/v2"),
+        }
+    ).key
+    # Provider and host are identical in every pair, so dropping either the
+    # port or the path from the identity would make one of these fail.
+    assert len({baseline, other_port, other_path}) == 3
 
 
 def test_endpoint_selections_differing_only_in_endpoint_are_distinct(
