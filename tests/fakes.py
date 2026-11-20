@@ -139,6 +139,7 @@ class FakeEnvironment(ExecutionEnvironment):
         agent_stderr: str = "",
         agent_exit: int = 0,
         fail_on: str | None = None,
+        probe_results: dict[str, CommandResult] | None = None,
     ) -> None:
         self.junit = junit
         self.tester_timeout = False
@@ -146,6 +147,8 @@ class FakeEnvironment(ExecutionEnvironment):
         self.agent_stderr = agent_stderr
         self.agent_exit = agent_exit
         self.fail_on = fail_on
+        # Canned results for version probes, keyed by the command's last element.
+        self.probe_results = probe_results or {}
         self.calls: list[tuple[str, Any]] = []
         self.destroyed: list[str] = []
 
@@ -197,6 +200,9 @@ class FakeEnvironment(ExecutionEnvironment):
     ) -> CommandResult:
         cmd = list(command)
         self.calls.append(("exec", cmd))
+        canned = self.probe_results.get(cmd[-1])
+        if canned is not None:
+            return canned
         out, err, code = "", "", 0
         script = cmd[-1] if cmd[:2] == ["sh", "-c"] else ""
         if "rev-parse HEAD" in script:
