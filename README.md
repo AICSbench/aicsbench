@@ -7,10 +7,11 @@ languages and frameworks.
 > **Status: Phase 5 in progress (public results and submissions).** Trials run in Docker with the
 > built-in Claude Code, Codex CLI and OpenCode adapters
 > ([docs/agents.md](docs/agents.md)). Repair attempts, bounded parallel runs,
-> comparison reports, a local dashboard, submission validation, and installed
-> language/framework version recording are available, and `aicsbench site
-> export` writes the public site's data ([docs/phase-5/site-export.md](docs/phase-5/site-export.md)).
-> The submit command is still planned in [Phase 5](docs/phase-5/README.md). See
+> comparison reports, a local dashboard, submission validation and submission
+> pull requests (`aicsbench submit`), and installed language/framework version
+> recording are available, and `aicsbench site export` writes the public site's
+> data ([docs/phase-5/site-export.md](docs/phase-5/site-export.md)). The rest of
+> the public results site is still planned in [Phase 5](docs/phase-5/README.md). See
 > [ARCHITECTURE.md](ARCHITECTURE.md) for the full vision.
 
 ## Install (development)
@@ -47,6 +48,7 @@ aicsbench stacks                     # list language/framework stacks
 aicsbench agents [--check --auth subscription]  # list adapters, check credentials
 aicsbench validate [FILES...]        # validate task/stack/experiment files
 aicsbench validate-submission PATH... # validate submission bundles
+aicsbench submit --run RUN_ID [--dry-run | --out DIR] [--with-logs]  # submit a run
 aicsbench run --agents codex,claude:<model> --task task-management-api \
               --stacks fastapi,laravel --trials 5 --auth subscription --dry-run
 aicsbench run --config examples/experiment.yaml --dry-run
@@ -103,6 +105,38 @@ before the agent starts.
 Platform settings come from `BENCHMARK_*` environment variables (nested with
 `__`, e.g. `BENCHMARK_DOCKER__DEFAULT_MEMORY_LIMIT=8g`) or global CLI options
 such as `--results-dir`.
+
+## Submitting results
+
+Finished runs can be published on the public results site by pull request to
+[`aicsbench/data`](https://github.com/aicsbench/data). One command packs the
+run into a bundle, validates it with the same checks the data repository's CI
+runs, and opens the pull request:
+
+```bash
+aicsbench submit --run RUN_ID --dry-run            # show the bundle and its validation
+aicsbench submit --run RUN_ID --notes "M3 Max, 64 GB"   # fork, push and open the PR
+aicsbench submit --run RUN_ID --out DIR            # write DIR/submissions/... to open the PR by hand
+```
+
+Opening the PR needs the [GitHub CLI](https://cli.github.com/) installed and
+logged in (`gh auth login`). The submitter name defaults to `git config
+user.name` (`--name`) and the GitHub handle to the account `gh` is logged in as
+(`--github`). Every trial must be finished, and each needs its harness version.
+
+The bundle is a sanitized copy; `results/` is never changed. Host details are
+cut to platform, Python and machine, the run's results and workspace folders and
+your home folder are replaced with `<results>`, `<workspace>` and `~`, a custom
+endpoint host other than `openrouter.ai`, `api.anthropic.com` or
+`api.openai.com` is published as `custom`, and every
+file is scanned for secrets: a match refuses the whole bundle and nothing is
+written or sent. Logs are included only with `--with-logs` (each trial's
+`.workspaces/<run>/<trial>/logs/` as `logs/<trial>.tar.gz`); the scan is a
+safety net, so read your logs before submitting them. PR mode refuses a run
+that is already in `aicsbench/data`; with `--out` or `--dry-run`, pass
+`--against DIR` (a checkout of the data repository) for that check. Submitted
+result data is published under CC BY 4.0. The bundle format is in
+[docs/phase-5/schemas.md](docs/phase-5/schemas.md#submission-bundle).
 
 ## Layout
 
