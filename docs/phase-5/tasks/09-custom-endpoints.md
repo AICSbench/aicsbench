@@ -72,16 +72,26 @@ compared with direct runs.
    here.
 5. **Comparability.**
    - Add `ComparisonDimension.PROVIDER`.
-   - `compare_trials`: the harness rules from task 1 (`AGENT`, `HARNESS`,
-     `HARNESS_VERSION`) also require **one provider**, with the message
-     `"harness comparison mixes providers; filter to one provider"`. A
-     Codex run against OpenAI directly is never ranked against a Claude Code
-     run through OpenRouter.
+   - `compare_trials`: a comparison that isolates the harness (`AGENT`,
+     `HARNESS`, `HARNESS_VERSION`, alone or with dimensions other than
+     `MODEL`) also requires **one provider** across the selection, with the
+     message `"harness comparison mixes providers; filter to one provider"`.
+     A Codex run against OpenAI directly is never ranked against a Claude
+     Code run through OpenRouter.
+   - A comparison of harness + model **packages** (`HARNESS_MODEL`,
+     `AGENT_MODEL`, or `HARNESS`/`AGENT` together with `MODEL`) ranks each
+     pair as it was used, so its rows may differ in provider: Claude Code +
+     Opus on Anthropic against Codex + GPT on OpenAI is a valid leaderboard.
+     Each row still holds **one provider**: a direct run and a gateway run
+     of the same harness and model are never pooled, and such a row refuses
+     with the same message. Stack, model key, comparability key and suite
+     rules are unchanged.
    - That provider must be known. If any selected trial has provider
      `unknown`, including a selection where every trial is `unknown`, the
      harness rules refuse with `"harness comparison needs a recorded
-     provider; exclude trials recorded before provider tracking"`. The site's
-     harness pages and the compare page apply the same rule.
+     provider; exclude trials recorded before provider tracking"`. This also
+     applies to harness + model packages. The site's harness pages and the
+     compare page apply the same rules.
    - `--by provider` needs one harness, one model key and one stack.
    - `comparability_key` is unchanged.
 6. **Export and site.** `trial_row` gets `provider` and `endpoint_host` at
