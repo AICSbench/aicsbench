@@ -80,6 +80,13 @@ class StackSpec(StrictModel):
     setup_commands: list[list[str]] = Field(
         default_factory=list, description="Run inside the container before the agent starts."
     )
+    version_probes: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description="Name -> command run inside the app container after the agent finishes "
+        "to record the version actually installed. 'language' and 'framework' have fixed "
+        "meaning; any other name records an extra component. Each command prints only the "
+        "version on stdout.",
+    )
     services: list[ServiceSpec] = Field(default_factory=list)
     resources: ResourceLimits = Field(default_factory=ResourceLimits)
     source_dir: Path | None = Field(

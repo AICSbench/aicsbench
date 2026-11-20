@@ -147,6 +147,23 @@ def test_shipped_stacks_build_from_files_and_describe_their_environment(
         assert catalog.get_stack(stack_id).environment_notes.strip(), stack_id
 
 
+def test_shipped_stacks_declare_language_and_framework_probes(settings: PlatformSettings) -> None:
+    catalog = SpecCatalog(settings)
+    for stack_id, stack in catalog.stacks().items():
+        assert "language" in stack.version_probes, stack_id
+        assert "framework" in stack.version_probes, stack_id
+        for name, command in stack.version_probes.items():
+            # Probes are shell commands run like setup_commands, in the stack workdir.
+            assert command[:2] == ["sh", "-lc"] and command[-1].strip(), (stack_id, name)
+    assert set(catalog.get_stack("laravel13-boost").version_probes) == {
+        "language",
+        "framework",
+        "laravel/boost",
+    }
+    for stack_id in ("fastapi", "laravel", "express"):
+        assert set(catalog.get_stack(stack_id).version_probes) == {"language", "framework"}
+
+
 def test_shipped_task_has_its_acceptance_suite(settings: PlatformSettings) -> None:
     task = SpecCatalog(settings).get_task("task-management-api")
     assert task.acceptance_tests.suite is not None and task.source_dir is not None

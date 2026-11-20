@@ -1,5 +1,6 @@
 """Orchestrator trial execution against an in-memory environment."""
 
+import logging
 import shutil
 import threading
 from pathlib import Path
@@ -10,6 +11,8 @@ import pytest
 from ai_benchmark.agents import AgentRegistry
 from ai_benchmark.config import AgentSelection, ExperimentConfig, SpecCatalog
 from ai_benchmark.config.settings import PlatformSettings
+from ai_benchmark.environment import CommandResult
+from ai_benchmark.errors import ExecutionEnvironmentError
 from ai_benchmark.models import (
     AuthMode,
     Metric,
@@ -114,6 +117,114 @@ def test_passing_trial_is_recorded(env_settings: PlatformSettings) -> None:
 
     manifest = o.store.load_manifest(summary.run_id)
     assert manifest.trial_ids == [r.trial_id] and manifest.auth_mode is AuthMode.SUBSCRIPTION
+
+
+def probe_stack_settings(
+    settings: PlatformSettings, tmp_path: Path, probes: str
+) -> PlatformSettings:
+    stacks = tmp_path / "stacks"
+    stacks.mkdir()
+    (stacks / "express.yaml").write_text(
+        "id: express\nlanguage: javascript\nlanguage_version: '22'\nframework: express\n"
+        "framework_version: '4.21'\nimage: node:22.11.0-bookworm-slim\nworkdir: /workspace\n"
+        f"{probes}",
+        encoding="utf-8",
+    )
+    return settings.model_copy(update={"stacks_dir": stacks})
+
+
+def probe_result(stdout: str = "", exit_code: int = 0, timed_out: bool = False) -> CommandResult:
+    return CommandResult(
+        command=[], exit_code=exit_code, stdout=stdout, stderr="", duration_seconds=0.0,
+        timed_out=timed_out,
+    )
+
+
+def test_version_probes_run_after_agent_and_before_acceptance(
+    env_settings: PlatformSettings, tmp_path: Path
+) -> None:
+    settings = probe_stack_settings(
+        env_settings,
+        tmp_path,
+        "version_probes:\n"
+        '  language: [sh, -lc, "echo node-22.11.0"]\n'
+        '  framework: [sh, -lc, "echo express-4.21.0"]\n',
+    )
+    env = FakeEnvironment(
+        probe_results={
+            "echo node-22.11.0": probe_result("22.11.0\n"),
+            "echo express-4.21.0": probe_result("4.21.0\nextra line\n"),
+        }
+    )
+    o = build(settings, env)
+    o.run(experiment(stacks=["express"]), run_id="r-probes")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-probes")))
+    assert r.status is TrialStatus.PASSED
+    assert r.environment.installed_versions == {"language": "22.11.0", "framework": "4.21.0"}
+    calls = env.calls
+    agent = next(
+        i for i, c in enumerate(calls) if c[0] == "exec" and c[1][:2] == ["fake", "--prompt"]
+    )
+    probes = [i for i, c in enumerate(calls) if c[0] == "exec" and c[1][-1].startswith("echo ")]
+    assert len(probes) == 2
+    restart = next(i for i, c in enumerate(calls) if c[0] == "restart")
+    assert agent < probes[0] and probes[-1] < restart
+
+
+def test_failed_or_empty_version_probe_is_skipped(
+    env_settings: PlatformSettings, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    settings = probe_stack_settings(
+        env_settings,
+        tmp_path,
+        "version_probes:\n"
+        '  language: [sh, -lc, "echo node-22.11.0"]\n'
+        '  framework: [sh, -lc, "echo express-4.21.0"]\n'
+        '  timed: [sh, -lc, "echo slow"]\n'
+        '  empty: [sh, -lc, "true"]\n',
+    )
+    env = FakeEnvironment(
+        probe_results={
+            "echo node-22.11.0": probe_result("22.11.0\n"),
+            "echo express-4.21.0": probe_result("boom", exit_code=3),
+            "echo slow": probe_result("slow", timed_out=True),
+        }
+    )
+    o = build(settings, env)
+    with caplog.at_level(logging.WARNING):
+        o.run(experiment(stacks=["express"]), run_id="r-probe-failures")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-probe-failures")))
+    assert r.status is TrialStatus.PASSED
+    assert r.environment.installed_versions == {"language": "22.11.0"}
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    messages = [record.getMessage() for record in warnings]
+    assert any("'framework'" in m and "exit code 3" in m for m in messages)
+    assert any("'timed'" in m and "timed out" in m for m in messages)
+    assert any("'empty'" in m and "no output" in m for m in messages)
+
+
+def test_raising_version_probe_is_skipped(
+    env_settings: PlatformSettings, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    settings = probe_stack_settings(
+        env_settings,
+        tmp_path,
+        "version_probes:\n"
+        '  language: [sh, -lc, "echo node-22.11.0"]\n'
+        '  framework: [sh, -lc, "echo broken"]\n',
+    )
+    env = FakeEnvironment(
+        probe_results={"echo node-22.11.0": probe_result("22.11.0\n")},
+        probe_raises={"echo broken": ExecutionEnvironmentError("exec failed")},
+    )
+    o = build(settings, env)
+    with caplog.at_level(logging.WARNING):
+        o.run(experiment(stacks=["express"]), run_id="r-probe-raises")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-probe-raises")))
+    assert r.status is TrialStatus.PASSED
+    assert r.environment.installed_versions == {"language": "22.11.0"}
+    messages = [rec.getMessage() for rec in caplog.records if rec.levelno == logging.WARNING]
+    assert any("'framework'" in m and "exec failed" in m for m in messages)
 
 
 def test_failed_tests_mark_trial_failed(env_settings: PlatformSettings) -> None:

@@ -45,6 +45,10 @@ setup_commands:
       exit 1
   - [php, artisan, boost:install, --guidelines, --skills, --mcp, --no-interaction]
   - [sh, -lc, "if command -v codex >/dev/null 2>&1; then codex mcp add laravel-boost -- php artisan boost:mcp; fi"]
+version_probes:
+  language: [sh, -lc, "php -r \"echo PHP_VERSION;\""]
+  framework: [sh, -lc, "php -r \"require 'vendor/autoload.php'; echo Illuminate\\Foundation\\Application::VERSION;\""]
+  laravel/boost: [sh, -lc, "composer show laravel/boost | sed -n 's/^versions : \\* //p'"]
 env:
   DB_CONNECTION: mysql
   DB_HOST: mysql

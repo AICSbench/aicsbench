@@ -47,7 +47,20 @@ What `aicsbench run` does for each trial, in order. The code lives in
 5. After the final attempt, the workspace is committed. Lines added and files
    changed are measured against the baseline.
 
-## 4. Acceptance tests
+## 4. Version probes
+
+After the agent finishes and before the acceptance tests, the orchestrator
+runs the stack's `version_probes` (a name -> command map, e.g. `language`
+and `framework`; any other name records an extra component) inside the app
+container at the stack's `workdir`, like `setup_commands`. Each probe gets a
+30 second timeout and must print only the version on stdout; the output is
+stripped and its first line is recorded in `environment.installed_versions`.
+A probe that fails, times out or prints nothing is logged as a warning and
+left out; probes never change the trial status. The export adds the columns
+`language_version_installed` and `framework_version_installed`; installed
+versions are informational only and are not part of `comparability_key`.
+
+## 5. Acceptance tests
 
 The agent never sees the suite itself. After each agent attempt:
 
@@ -71,7 +84,7 @@ attempts and acceptance tests from the first agent start until the passing
 suite. Agent execution time is the sum of all attempts; token and cost metrics
 are summed only when every attempt reports them. All attempt logs are retained.
 
-## 5. Status
+## 6. Status
 
 Checked in this order: `infra_error` (anything the platform itself failed
 at), `timed_out`, `rate_limited`, `agent_error`, `passed` (at least one test
