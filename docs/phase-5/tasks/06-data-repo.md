@@ -38,8 +38,10 @@ executes anything from the PR. Branch protection requires **both** checks.
 
 The benchmark is always installed the same way, at a pinned ref held in one
 `env:` line per workflow:
-`pip install "ai-benchmark @ git+https://github.com/aicsbench/aicsbench@<ref>"`.
-The distribution is named `ai-benchmark`, and it installs the `aicsbench`
+`pip install "aicsbench @ git+https://github.com/aicsbench/aicsbench@<ref>"`
+(at refs that predate the rename, the distribution was still named
+`ai-benchmark`, so those installs keep the old requirement string).
+The distribution is named `aicsbench`, and it installs the `aicsbench`
 command.
 
 ### `validate.yml`
