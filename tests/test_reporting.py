@@ -75,7 +75,12 @@ def test_export_adds_installed_version_columns() -> None:
     row = json.loads(export_trials([item], "jsonl"))
     assert row["language_version_installed"] == "3.12.7"
     assert row["framework_version_installed"] == "0.115.2"
-    assert list(row)[-2:] == ["language_version_installed", "framework_version_installed"]
+    assert list(row)[-4:] == [
+        "language_version_installed",
+        "framework_version_installed",
+        "provider",
+        "endpoint_host",
+    ]
 
 
 def test_export_reads_trials_saved_before_installed_versions(tmp_path: Path) -> None:
