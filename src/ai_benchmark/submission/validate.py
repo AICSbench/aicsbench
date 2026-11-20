@@ -79,7 +79,9 @@ def _load_model(
     name = label or file.name
     try:
         data = json.loads(file.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError):
+        # ValueError covers JSONDecodeError and, on Python 3.11+, the
+        # plain ValueError json.loads raises for very long integers.
         problems.append(Problem("schema", name, f"{name} is missing or not valid JSON"))
         return None
     try:
@@ -183,7 +185,13 @@ def _is_allowed_bundle_file(
 def _check_hashes(bundle: Path, submission: SubmissionInfo, problems: list[Problem]) -> None:
     for relative, expected in submission.files.items():
         file = bundle / relative
-        if Path(relative).is_absolute() or not file.resolve().is_relative_to(bundle):
+        try:
+            escapes = Path(relative).is_absolute() or not file.resolve().is_relative_to(bundle)
+        except (OSError, RuntimeError) as exc:
+            # A self-referencing symlink makes Path.resolve raise RuntimeError.
+            problems.append(Problem("hash", relative, f"cannot resolve the file path: {exc}"))
+            continue
+        if escapes:
             problems.append(Problem("hash", relative, "files path escapes the bundle"))
             continue
         if not file.is_file():
@@ -393,7 +401,7 @@ def _check_secrets(
         else:
             try:
                 data = json.loads(file.read_text(encoding="utf-8"))
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+            except (OSError, UnicodeDecodeError, ValueError, RecursionError):
                 continue
         matches = find_secrets(data)
         if matches:
@@ -428,7 +436,7 @@ def _check_log_archive(bundle: Path, archive: Path, problems: list[Problem]) -> 
                 extracted = tar.extractfile(member)
                 if extracted is None:
                     continue
-                if member.size > LOG_TOTAL_LIMIT_BYTES:
+                if member.size > LOG_TOTAL_LIMIT_BYTES - total:
                     problems.append(
                         Problem(
                             "layout",
@@ -438,7 +446,11 @@ def _check_log_archive(bundle: Path, archive: Path, problems: list[Problem]) -> 
                     )
                     return
                 data = bytearray()
-                while chunk := extracted.read(LOG_READ_CHUNK_BYTES):
+                # Bound each read by the remaining allowance plus one byte,
+                # so an oversized member can never be read fully.
+                while chunk := extracted.read(
+                    min(LOG_READ_CHUNK_BYTES, LOG_TOTAL_LIMIT_BYTES - total + 1)
+                ):
                     data += chunk
                     total += len(chunk)
                     if total > LOG_TOTAL_LIMIT_BYTES:
@@ -462,7 +474,7 @@ def _report_text_matches(
     where = f"{archive_relative}#{member_name}"
     matches = scan_text(text)
     if member_name.endswith(".json"):
-        with contextlib.suppress(json.JSONDecodeError):
+        with contextlib.suppress(ValueError):
             matches += find_secrets(json.loads(text))
     if matches:
         problems.append(Problem("secret", where, f"possible secret: {', '.join(matches)}"))
@@ -506,7 +518,7 @@ def _check_duplicate(
 def _read_submission_run_id(file: Path) -> str | None:
     try:
         data = json.loads(file.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError):
         return None
     run_id = data.get("run_id") if isinstance(data, dict) else None
     return run_id if isinstance(run_id, str) else None

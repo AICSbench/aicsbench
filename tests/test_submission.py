@@ -160,6 +160,15 @@ def test_schema_rejects_deeply_nested_json(catalog: SpecCatalog, tmp_path: Path)
     assert "schema" in codes(problems)
 
 
+def test_schema_rejects_oversized_json_integer(catalog: SpecCatalog, tmp_path: Path) -> None:
+    # On Python 3.11+ json.loads raises plain ValueError for integers over
+    # 4300 digits, which JSONDecodeError handlers do not cover.
+    bundle = copy_bundle(tmp_path)
+    (bundle / "manifest.json").write_text('{"run_id": "run-fixture-001", "n": ' + "9" * 5000 + "}")
+    problems = validate_bundle(bundle, catalog)
+    assert "schema" in codes(problems)
+
+
 @pytest.mark.parametrize(
     "submitted_at",
     ["2026-11-17T08:00:00+02:00", "2026-11-17T08:00:00"],
@@ -228,6 +237,22 @@ def test_hash_rejects_unreadable_file(catalog: SpecCatalog, tmp_path: Path) -> N
         locked.chmod(0o644)
     assert "hash" in codes(problems)
     assert any("cannot read" in p.message for p in problems if p.code == "hash")
+
+
+def test_hash_rejects_unresolvable_symlink(catalog: SpecCatalog, tmp_path: Path) -> None:
+    # A self-referencing symlink: Path.resolve raises RuntimeError on Python
+    # 3.10-3.12, while 3.13+ returns the link itself, so the entry then reads
+    # as missing. Either way the entry must be reported, never crash.
+    bundle = copy_bundle(tmp_path)
+    loop = bundle / "trials" / "loop.json"
+    loop.symlink_to(loop)
+    data = read_json(bundle, "submission.json")
+    data["files"]["trials/loop.json"] = "0" * 64
+    write_json(bundle, "submission.json", data)
+    refresh_hashes(bundle, ["submission.json"])
+    problems = validate_bundle(bundle, catalog)
+    assert "layout" in codes(problems)  # the symlink itself is still rejected
+    assert "trials/loop.json" in {p.path for p in problems if p.code == "hash"}
 
 
 def test_ids_reject_mismatched_run_id(catalog: SpecCatalog, tmp_path: Path) -> None:

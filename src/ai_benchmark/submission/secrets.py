@@ -94,9 +94,15 @@ def scan_text(text: str) -> list[str]:
     :func:`find_secrets`, so ``SECRET_KEYS`` apply there too.
     """
     matches: list[str] = []
-    structured_lines = {
-        text.count("\n", 0, match.start()) + 1 for match in _STRUCTURED_SECRET.finditer(text)
-    }
+    # finditer yields matches in order, so newline counts accumulate across
+    # the spans between matches instead of rescanning from position 0.
+    structured_lines: set[int] = set()
+    previous = 0
+    newlines = 0
+    for match in _STRUCTURED_SECRET.finditer(text):
+        newlines += text.count("\n", previous, match.start())
+        previous = match.start()
+        structured_lines.add(newlines + 1)
     for number, line in enumerate(text.splitlines(), 1):
         where = f"line {number}"
         if number in structured_lines or any(pattern.search(line) for pattern in SECRET_PATTERNS):
