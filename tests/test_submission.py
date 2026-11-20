@@ -682,7 +682,7 @@ def test_log_archive_scans_json_member_with_oversized_integer(
     # member is single-line so only the JSONL parse sees it. Neither raw text
     # contains the literal key (it is \u005f-escaped), so detection proves the
     # decoded document reached find_secrets.
-    escaped = '"access\u005ftoken": "sk-live-abcd1234", "n": ' + "9" * 5000
+    escaped = r'"access\u005ftoken": "sk-live-abcd1234", "n": ' + "9" * 5000
     newline = chr(10)
     multiline = "{" + newline + escaped + newline + "}"
     bundle = _log_bundle(catalog, tmp_path)
