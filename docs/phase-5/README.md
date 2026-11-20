@@ -67,18 +67,21 @@ change to how trials are executed. Revisit when submission volume needs it.
 Each task is one pull request. Start a task only when the tasks it depends
 on are merged into `main`.
 
-| # | Task | Depends on | Repository |
-| --- | --- | --- | --- |
-| 1 | [Harness fields and dimensions](tasks/01-harness-dimensions.md) | none | `aicsbench/aicsbench` |
-| 2 | [Submission bundle and validator](tasks/02-bundle-and-validator.md) | 1 | `aicsbench/aicsbench` |
-| 3 | [`aicsbench submit`](tasks/03-submit-command.md) | 2 | `aicsbench/aicsbench` |
-| 4 | [`aicsbench site export`](tasks/04-site-export.md) | 1, 2 | `aicsbench/aicsbench` |
-| 7 | [Installed language and framework versions](tasks/07-installed-versions.md) | none | `aicsbench/aicsbench` |
-| 8 | [Framework version per run, pinned stacks](tasks/08-stack-versions.md) | 7 | `aicsbench/aicsbench` |
-| 9 | [Custom model endpoints](tasks/09-custom-endpoints.md) | 1 | `aicsbench/aicsbench` |
-| 6 | [Data repository files and workflows](tasks/06-data-repo.md) | 2, 4, [setup](setup.md) §1 and §3 | `aicsbench/data` |
-| 10 | [SvelteKit site and deploy](tasks/10-web-site.md) | 4, [setup](setup.md) §1 and §2 | `aicsbench/web` |
-| 5 | [Compare page in the browser](tasks/05-compare-page.md) | 1, 10 | `aicsbench/web` |
+Track progress in the [Phase 5 issue](https://github.com/AICSbench/aicsbench/issues/10)
+and the individual task issues. GitHub Issues are the source of truth for status.
+
+| # | Task | Depends on | Repository | Issue |
+| --- | --- | --- | --- | --- |
+| 1 | [Harness fields and dimensions](tasks/01-harness-dimensions.md) | none | `aicsbench/aicsbench` | [#11](https://github.com/AICSbench/aicsbench/issues/11) |
+| 2 | [Submission bundle and validator](tasks/02-bundle-and-validator.md) | 1 | `aicsbench/aicsbench` | [#12](https://github.com/AICSbench/aicsbench/issues/12) |
+| 3 | [`aicsbench submit`](tasks/03-submit-command.md) | 2 | `aicsbench/aicsbench` | [#13](https://github.com/AICSbench/aicsbench/issues/13) |
+| 4 | [`aicsbench site export`](tasks/04-site-export.md) | 1, 2 | `aicsbench/aicsbench` | [#14](https://github.com/AICSbench/aicsbench/issues/14) |
+| 7 | [Installed language and framework versions](tasks/07-installed-versions.md) | none | `aicsbench/aicsbench` | [#17](https://github.com/AICSbench/aicsbench/issues/17) |
+| 8 | [Framework version per run, pinned stacks](tasks/08-stack-versions.md) | 7 | `aicsbench/aicsbench` | [#18](https://github.com/AICSbench/aicsbench/issues/18) |
+| 9 | [Custom model endpoints](tasks/09-custom-endpoints.md) | 1 | `aicsbench/aicsbench` | [#19](https://github.com/AICSbench/aicsbench/issues/19) |
+| 6 | [Data repository files and workflows](tasks/06-data-repo.md) | 2, 4, [setup](setup.md) §1 and §3 | `aicsbench/data` | [#16](https://github.com/AICSbench/aicsbench/issues/16) |
+| 10 | [SvelteKit site and deploy](tasks/10-web-site.md) | 4, [setup](setup.md) §1 and §2 | `aicsbench/web` | [#20](https://github.com/AICSbench/aicsbench/issues/20) |
+| 5 | [Compare page in the browser](tasks/05-compare-page.md) | 1, 10 | `aicsbench/web` | [#15](https://github.com/AICSbench/aicsbench/issues/15) |
 
 Task numbers are stable IDs, not an order; the table is grouped by
 repository. Tasks 2, 7 and 9 can run in parallel once task 1 is merged
@@ -108,9 +111,9 @@ maintainer's setup steps.
 
    In `aicsbench/data` run what its CI runs; in `aicsbench/web` that is
    `pnpm install --frozen-lockfile && pnpm check && pnpm lint && pnpm test && pnpm build`.
-5. Update the docs the task names. Set the task's row in **Status** below
-   to "done in <repo>#N": in the same PR for this repository, or in a
-   small follow-up PR here for tasks in the other two.
+5. Update the docs the task names. In the PR description, use
+   `Closes AICSbench/aicsbench#N` only if merging the PR completes the task.
+   For partial work, use `Refs AICSbench/aicsbench#N` and leave the issue open.
 
 ## Conventions
 
@@ -129,18 +132,3 @@ maintainer's setup steps.
 - Dependencies: Phase 5 adds no runtime dependency to `aicsbench`.
   SvelteKit, DuckDB-WASM and all other JavaScript live only in
   `aicsbench/web`.
-
-## Status
-
-| Task | Status |
-| --- | --- |
-| 1 Harness fields and dimensions | done in [aicsbench/aicsbench#21](https://github.com/AICSbench/aicsbench/pull/21) |
-| 2 Submission bundle and validator | done in [aicsbench/aicsbench#23](https://github.com/AICSbench/aicsbench/pull/23) |
-| 3 `aicsbench submit` | in review in [aicsbench/aicsbench#28](https://github.com/AICSbench/aicsbench/pull/28) |
-| 4 Site export | done in [aicsbench/aicsbench#26](https://github.com/AICSbench/aicsbench/pull/26) |
-| 5 Compare page | not started |
-| 6 Data repository | not started |
-| 10 SvelteKit site | not started |
-| 7 Installed versions | done in [aicsbench/aicsbench#22](https://github.com/AICSbench/aicsbench/pull/22) |
-| 8 Stack versions | not started |
-| 9 Custom endpoints | not started |
