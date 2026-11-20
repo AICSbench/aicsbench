@@ -92,10 +92,10 @@ class ClaudeCodeAdapter(CliAgentAdapter):
             mode=AuthMode.API_KEY, env_from={"ANTHROPIC_AUTH_TOKEN": endpoint.api_key_env}
         )
 
-    def endpoint_env(self, endpoint: EndpointConfig | None) -> dict[str, str]:
-        if endpoint is None:
+    def endpoint_env(self, task: AgentTask) -> dict[str, str]:
+        if task.endpoint is None:
             return {}
-        return {"ANTHROPIC_BASE_URL": endpoint.base_url}
+        return {"ANTHROPIC_BASE_URL": task.endpoint.base_url}
 
     def build_command(self, task: AgentTask) -> list[str]:
         cmd = [

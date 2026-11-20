@@ -22,7 +22,6 @@ from ai_benchmark.agents.base import (
     AgentRunResult,
     AgentTask,
 )
-from ai_benchmark.config.experiment import EndpointConfig
 from ai_benchmark.environment.base import CommandRunner
 from ai_benchmark.models.enums import MetricSource
 from ai_benchmark.models.metrics import Metric
@@ -109,10 +108,10 @@ class CliAgentAdapter(AgentAdapter):
         """Lines of stderr worth checking for limit messages. Default: the last 20."""
         return [line for line in stderr.splitlines()[-20:] if line.strip()]
 
-    def endpoint_env(self, endpoint: EndpointConfig | None) -> dict[str, str]:
+    def endpoint_env(self, task: AgentTask) -> dict[str, str]:
         """Non-secret env vars that point the CLI at a custom endpoint. Default: none.
 
-        Values only ever come from the config (a base URL is not a secret);
+        Values only ever come from the task's config (a base URL is not a secret);
         the API key travels separately, by variable name (:meth:`AgentAdapter.endpoint_auth`).
         """
         return {}
@@ -144,7 +143,7 @@ class CliAgentAdapter(AgentAdapter):
         stdout_path = task.log_dir / "agent.stdout.log"
         stderr_path = task.log_dir / "agent.stderr.log"
         command = self.build_command(task)
-        env = {**task.env, **self.endpoint_env(task.endpoint)}
+        env = {**task.env, **self.endpoint_env(task)}
         started = datetime.now(timezone.utc)
         res = runner.run(
             command,

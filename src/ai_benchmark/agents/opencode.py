@@ -16,23 +16,25 @@ permissions) and the pinned CLI's own ``opencode run --help`` and source:
   name comes from the ``api_key_env`` option (default ``ANTHROPIC_API_KEY``)
   or the experiment's ``auth`` block.
 * OpenCode does not report which model actually answered.
-* Custom endpoint (task 9): a provider entry for the configured slug with
-  ``options.baseURL``, written to ``~/.config/opencode/opencode.json`` before
-  the run, checked against https://opencode.ai/docs/providers and
-  https://opencode.ai/docs/config. The API key is set as
-  ``options.apiKey: "{env:<name>}"`` (OpenCode's variable substitution), so
-  the generated config carries the key's variable name, never its value.
+* Custom endpoint (task 9): a provider entry registered under the internal ID
+  ``bench`` with ``options.baseURL``, delivered as ``OPENCODE_CONFIG_CONTENT``
+  inline config, checked against https://opencode.ai/docs/providers and
+  https://opencode.ai/docs/config. The internal ID keeps OpenCode from
+  activating a built-in loader for a well-known slug, and inline config is
+  merged after every file-based source, so a workspace ``opencode.json`` or
+  ``.opencode`` config cannot override the endpoint's ``baseURL``. The
+  command's model prefix is rewritten to the internal ID; the API key is set
+  as ``options.apiKey: "{env:<name>}"`` (OpenCode's variable substitution),
+  so the generated config carries the key's variable name, never its value.
 """
 
 from __future__ import annotations
 
 import json
-import posixpath
-import shlex
 from pathlib import Path
 from typing import Any, ClassVar
 
-from ai_benchmark.agents.base import AgentCapabilities, AgentRunResult, AgentTask
+from ai_benchmark.agents.base import AgentCapabilities, AgentTask
 from ai_benchmark.agents.cli import (
     AGENT_HOME,
     CliAgentAdapter,
@@ -42,15 +44,33 @@ from ai_benchmark.agents.cli import (
 )
 from ai_benchmark.agents.registry import register_agent
 from ai_benchmark.config.auth import AgentAuthConfig, CredentialFile
-from ai_benchmark.environment.base import AgentImageLayer, CommandRunner
-from ai_benchmark.errors import AgentExecutionError, ConfigurationError
+from ai_benchmark.environment.base import AgentImageLayer
+from ai_benchmark.errors import ConfigurationError
 from ai_benchmark.models.enums import AuthMode, MetricSource
 from ai_benchmark.models.metrics import Metric, TokenUsage, UsageMetrics
 
 _OPTIONS = {"api_key_env"}
 
-OPENCODE_CONFIG_PATH = f"{AGENT_HOME}/.config/opencode/opencode.json"
-"""Where the generated provider config goes; OpenCode's documented global config."""
+OPENCODE_PROVIDER_ID = "bench"
+"""Internal provider ID the generated config registers for a custom endpoint.
+
+A dedicated ID keeps OpenCode from activating a built-in provider loader for a
+well-known slug: OpenCode 1.19.5 maps the provider ID ``openai`` to its
+built-in ``@ai-sdk/openai`` loader, whose ``responses()`` SDK the
+``@ai-sdk/openai-compatible`` package configured here does not provide, so the
+run would fail before inference. ``endpoint.provider`` stays the recorded
+comparison label; only the command's model prefix is rewritten to this ID.
+"""
+
+OPENCODE_CONFIG_CONTENT = "OPENCODE_CONFIG_CONTENT"
+"""Env var carrying the generated provider config as inline JSON.
+
+OpenCode merges it after every file-based source - global, ``OPENCODE_CONFIG``,
+project ``opencode.json`` files and ``.opencode`` directories - so a workspace
+config cannot override the endpoint's ``baseURL`` (``OPENCODE_DISABLE_PROJECT_CONFIG``
+does not cover ``.opencode`` directories). OpenCode 1.19.5's config loader reads
+it last among user-controllable sources; the container has no managed config.
+"""
 
 
 @register_agent
@@ -98,46 +118,51 @@ class OpenCodeAdapter(CliAgentAdapter):
     def build_command(self, task: AgentTask) -> list[str]:
         cmd = [self.executable, "run", "--format", "json", "--auto"]
         if task.model:
-            cmd += ["--model", task.model]
+            cmd += ["--model", self.command_model(task)]
         if task.reasoning_effort:
             cmd += ["--variant", task.reasoning_effort]
         return [*cmd, "--", task.prompt]
 
-    def run(self, task: AgentTask, runner: CommandRunner) -> AgentRunResult:
-        if task.endpoint is not None:
-            res = runner.run(
-                [
-                    "sh",
-                    "-c",
-                    f"mkdir -p {shlex.quote(posixpath.dirname(OPENCODE_CONFIG_PATH))}"
-                    f" && printf %s {shlex.quote(json.dumps(self.provider_config(task)))}"
-                    f" > {shlex.quote(OPENCODE_CONFIG_PATH)}",
-                ],
-                timeout_seconds=60,
-                workdir=task.workdir,
-            )
-            # A failed or timed-out write would leave OpenCode with missing or
-            # stale config, so the run must not start.
-            if res.timed_out or not res.ok:
-                why = "timed out" if res.timed_out else f"exit code {res.exit_code}"
-                tail = "\n".join(res.stderr.splitlines()[-5:])
-                raise AgentExecutionError(
-                    f"could not write the OpenCode provider config ({why}): {tail or 'no stderr'}"
-                )
-        return super().run(task, runner)
+    def command_model(self, task: AgentTask) -> str:
+        """The model ID for ``--model``: the request as-is, or the internal provider.
+
+        Endpoint trials route through :data:`OPENCODE_PROVIDER_ID`, the provider
+        the generated config registers; the recorded comparison label stays
+        ``endpoint.provider``.
+        """
+        if task.endpoint is None or not task.model:
+            return task.model or ""
+        provider, _, model = task.model.partition("/")
+        assert provider == task.endpoint.provider  # re-checked in provider_config
+        return f"{OPENCODE_PROVIDER_ID}/{model}"
+
+    def endpoint_env(self, task: AgentTask) -> dict[str, str]:
+        """The generated provider config as OpenCode's inline config JSON.
+
+        ``OPENCODE_CONFIG_CONTENT`` is merged after every file-based config
+        source, so the endpoint's ``baseURL`` cannot be overridden by a
+        workspace ``opencode.json`` or ``.opencode`` directory config. The
+        payload carries the key's variable name, never its value.
+        """
+        if task.endpoint is None:
+            return {}
+        return {OPENCODE_CONFIG_CONTENT: json.dumps(self.provider_config(task))}
 
     def provider_config(self, task: AgentTask) -> dict[str, Any]:
-        """The generated ``opencode.json`` provider entry for a custom endpoint.
+        """The generated OpenCode provider entry for a custom endpoint.
 
-        The API key is OpenCode's ``{env:<name>}`` substitution, so the file
-        carries the key's variable name, never its value.
+        Registered under :data:`OPENCODE_PROVIDER_ID` so OpenCode uses the
+        ``@ai-sdk/openai-compatible`` package configured here instead of a
+        built-in loader for a well-known slug. The API key is OpenCode's
+        ``{env:<name>}`` substitution, so the config carries the key's
+        variable name, never its value.
         """
         endpoint = task.endpoint
         assert endpoint is not None
         # Config validation rejects these; re-checked here so a programmatic
         # AgentTask cannot point --model at another provider and bypass the
         # gateway.
-        provider, separator, _ = (task.model or "").partition("/")
+        provider, separator, model = (task.model or "").partition("/")
         if not separator or provider != endpoint.provider:
             raise ConfigurationError(
                 f"opencode model {task.model!r} must be "
@@ -151,12 +176,12 @@ class OpenCodeAdapter(CliAgentAdapter):
                 "baseURL": endpoint.base_url,
                 "apiKey": f"{{env:{endpoint.api_key_env}}}",
             },
+            # Models must be declared for a custom provider; the command's
+            # model ID is rewritten to "<internal>/<model>", so the entry key
+            # drops the requested provider prefix.
+            "models": {model: {}},
         }
-        # Models must be declared for a custom provider; the requested model is
-        # written "<provider>/<model>" as usual, so the ID drops that prefix.
-        if task.model:
-            entry["models"] = {task.model.partition("/")[2]: {}}
-        return {"$schema": "opencode.ai/config.json", "provider": {endpoint.provider: entry}}
+        return {"$schema": "opencode.ai/config.json", "provider": {OPENCODE_PROVIDER_ID: entry}}
 
     def validate_options(self, options: dict[str, Any]) -> None:
         unknown = set(options) - _OPTIONS

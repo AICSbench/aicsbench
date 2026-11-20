@@ -117,7 +117,10 @@ class EndpointConfig(StrictModel):
                 f"plain http:// is only allowed for localhost, a private IP or a Docker "
                 f"service name, not the numeric host '{host}'; use https://"
             )
-        if host == "localhost" or "." not in host:  # bare host: a Docker service name
+        # A bare host is a Docker service name. A host containing percent
+        # escapes is not one: WHATWG URL parsing percent-decodes the host
+        # before connecting, so '%38%2e%38...' is really '8.8.8.8'.
+        if (host == "localhost" or "." not in host) and "%" not in host:
             return v
         raise ValueError(
             f"plain http:// is only allowed for localhost, a private IP or a Docker "
