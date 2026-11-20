@@ -34,6 +34,7 @@ from ai_benchmark.orchestrator.orchestrator import BenchmarkOrchestrator
 from ai_benchmark.reporting import export_trials, render_report
 from ai_benchmark.storage.base import ResultFilter
 from ai_benchmark.storage.json_store import JsonResultStore
+from ai_benchmark.submission.validate import validate_bundle
 
 app = typer.Typer(
     name="aicsbench",
@@ -245,6 +246,45 @@ def validate(
             failed = True
             err_console.print(f"[red]fail[/red] {exc}")
     if failed:
+        raise typer.Exit(1)
+
+
+@app.command("validate-submission")
+def validate_submission(
+    ctx: typer.Context,
+    paths: Annotated[list[Path], typer.Argument(help="Bundle directories to validate.")],
+    against: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--against", help="Directory of already-merged bundles to reject duplicates against."
+        ),
+    ] = None,
+    no_catalog_check: Annotated[
+        bool,
+        typer.Option(
+            "--no-catalog-check",
+            help="Rebuild mode: skip the task rule and the catalog suite check.",
+        ),
+    ] = False,
+) -> None:
+    """Validate submission bundles (docs/phase-5/schemas.md#validation-rules)."""
+    catalog = _ctx(ctx).catalog
+    if against is not None and not against.is_dir():
+        raise _fail(f"not a directory: {against}", code=2)
+    problems_found = False
+    for path in paths:
+        if not path.is_dir():
+            raise _fail(f"not a bundle directory: {path}", code=2)
+        problems = validate_bundle(
+            path, catalog, against=against, check_catalog=not no_catalog_check
+        )
+        if problems:
+            problems_found = True
+            for problem in problems:
+                typer.echo(str(problem))
+        else:
+            typer.echo(f"ok {path}")
+    if problems_found:
         raise typer.Exit(1)
 
 

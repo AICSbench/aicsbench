@@ -183,3 +183,8 @@ class RunManifest(BaseModel):
     task_snapshot: dict[str, Any] = Field(description="Snapshot of the BenchmarkSpec used.")
     trial_ids: list[str] = Field(default_factory=list)
     host: dict[str, str] = Field(default_factory=dict)
+    acceptance_suite_sha256: str | None = Field(
+        default=None,
+        description="Hash of the task's acceptance suite at run time "
+        "(docs/phase-5/schemas.md#acceptance-suite-hash). Optional so older manifests load.",
+    )

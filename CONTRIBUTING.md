@@ -63,6 +63,15 @@ tests on its own.
 
 Do not add co-author or other attribution trailers.
 
+## Benchmark tasks
+
+Each task version is immutable once a run has been recorded against it: the
+submission validator pins the acceptance suite by its SHA-256 hash
+(`docs/phase-5/schemas.md`). Changing a task's acceptance suite therefore
+requires a new task version; editing the suite in place makes existing runs
+unsubmittable. `tests/fixtures/suite-hashes.json` records the hash of every
+shipped task version and a test fails when it drifts.
+
 ## Branches and pull requests
 
 - Branch from `main` as `<type>/<short-description>`, e.g. `feat/codex-adapter`.
