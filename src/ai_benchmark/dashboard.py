@@ -229,8 +229,10 @@ def dashboard_response(store: JsonResultStore, target: str) -> tuple[int, str, b
     data: object
     if request.path == "/api/runs":
         data = [
-            {"run_id": run.run_id,
-             "trials": sum(1 for _ in store.iter_trials(ResultFilter(run_id=run.run_id)))}
+            {
+                "run_id": run.run_id,
+                "trials": sum(1 for _ in store.iter_trials(ResultFilter(run_id=run.run_id))),
+            }
             for run in store.list_runs()
         ]
     elif request.path == "/api/trials":

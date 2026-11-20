@@ -572,8 +572,13 @@ def compare(
     """Compare success rates and passing agent times from stored trials."""
     store = JsonResultStore(_ctx(ctx).settings.results_dir)
     filters = ResultFilter(
-        run_id=run_id, agent=agent, model=model, stack=stack, task=task,
-        tooling_mode=mode, auth_mode=auth,
+        run_id=run_id,
+        agent=agent,
+        model=model,
+        stack=stack,
+        task=task,
+        tooling_mode=mode,
+        auth_mode=auth,
     )
     try:
         dimensions = _dimensions(by)
@@ -585,7 +590,14 @@ def compare(
         return
     table = Table(
         " + ".join(dimension.value for dimension in dimensions),
-        "pass", "limits", "timed", "mean", "sd", "cost", "cost n", "conf",
+        "pass",
+        "limits",
+        "timed",
+        "mean",
+        "sd",
+        "cost",
+        "cost n",
+        "conf",
     )
     for row in rows:
         table.add_row(
@@ -615,9 +627,11 @@ def export(
     """Write flat per-trial results to stdout."""
     store = JsonResultStore(_ctx(ctx).settings.results_dir)
     try:
-        trials = list(store.iter_trials(ResultFilter(
-            run_id=run_id, agent=agent, model=model, stack=stack, task=task
-        )))
+        trials = list(
+            store.iter_trials(
+                ResultFilter(run_id=run_id, agent=agent, model=model, stack=stack, task=task)
+            )
+        )
         typer.echo(export_trials(trials, fmt), nl=False)
     except (BenchmarkError, ValueError) as exc:
         raise _fail(str(exc)) from None
@@ -643,10 +657,19 @@ def report(
     """Write an aggregate comparison report to stdout."""
     store = JsonResultStore(_ctx(ctx).settings.results_dir)
     try:
-        trials = list(store.iter_trials(ResultFilter(
-            run_id=run_id, agent=agent, model=model, stack=stack, task=task,
-            tooling_mode=mode, auth_mode=auth,
-        )))
+        trials = list(
+            store.iter_trials(
+                ResultFilter(
+                    run_id=run_id,
+                    agent=agent,
+                    model=model,
+                    stack=stack,
+                    task=task,
+                    tooling_mode=mode,
+                    auth_mode=auth,
+                )
+            )
+        )
         rows = compare_trials(trials, by, min_trials)
         if not rows:
             raise ValueError("no results match")

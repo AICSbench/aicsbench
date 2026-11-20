@@ -101,9 +101,9 @@ def _markdown_label(value: str) -> str:
 def render_report(rows: list[ComparisonRow], dimension: str, fmt: str) -> str:
     data = [asdict(row) for row in rows]
     if fmt == "json":
-        return json.dumps(
-            {"compare_by": dimension, "groups": data}, indent=2, allow_nan=False
-        ) + "\n"
+        return (
+            json.dumps({"compare_by": dimension, "groups": data}, indent=2, allow_nan=False) + "\n"
+        )
     if fmt == "csv":
         return csv_text(data)
     if fmt != "markdown":
@@ -131,9 +131,12 @@ def render_report(rows: list[ComparisonRow], dimension: str, fmt: str) -> str:
         rate = row.passed / row.trials if row.trials else 0
         label = _markdown_label(row.value)
         lines.append(f"| {label} | {'█' * round(rate * 20)} {rate:.0%} |")
-    lines.extend([
-        "",
-        "Agent time uses passing trials without rate-limit events and an available timer.",
-        "Success rate includes all trials. Cost is n/a when unavailable.", "",
-    ])
+    lines.extend(
+        [
+            "",
+            "Agent time uses passing trials without rate-limit events and an available timer.",
+            "Success rate includes all trials. Cost is n/a when unavailable.",
+            "",
+        ]
+    )
     return "\n".join(lines)
