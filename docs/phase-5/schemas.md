@@ -178,10 +178,14 @@ keys, all added to `trial_row` itself so CSV/JSONL exports get them too:
 | `endpoint_host` | `agent.endpoint_host`, the custom endpoint's base-URL host (`custom` when submit hid a private gateway address); task 9 |
 | `language_version_installed` | `environment.installed_versions["language"]` (task 7; the existing `language_version` key stays the version the stack declares) |
 | `framework_version_installed` | `environment.installed_versions["framework"]` (task 7; the existing `framework_version` key stays the version the stack declares) |
+| `framework_version_changed` | `environment.framework_version_changed` (task 8): `true` when the orchestrator found after the agent ran that the installed framework is not the version the run selected (the site shows "version changed during trial"), `false` when it checked and they match, `null` when it did not check (a stack without `framework_version_param`, no framework probe output, or a trial recorded before task 8) |
 
 In the export, `provider` is `null` for a trial recorded before provider
 tracking (the site shows it as `unknown`), and `endpoint_host` is `null` for a
-direct run.
+direct run. The site reads `framework_version_changed` as recorded and never
+derives it from `framework_version` and `framework_version_installed`: on a
+stack without a version parameter the declared version (such as `11`) never
+equals the installed one, so comparing them would mark every such trial.
 
 and these keys added only in the export:
 

@@ -80,6 +80,10 @@ class TrialRow(_Strict):
     # emits them yet; trials recorded without them export null.
     provider: str | None = None
     endpoint_host: str | None = None
+    # Task 8: true when core found the installed framework is not the selected
+    # version ("version changed during trial"), false when checked and equal,
+    # null when not checked. Defaulted like the task 9 keys.
+    framework_version_changed: bool | None = None
     # Export-only keys.
     verified: bool
     logs_available: bool

@@ -60,6 +60,7 @@ def trial_row(trial: TrialResult) -> dict[str, str | int | float | bool | None]:
         "framework_version_installed": trial.environment.installed_versions.get("framework"),
         "provider": trial.agent.provider,
         "endpoint_host": trial.agent.endpoint_host,
+        "framework_version_changed": trial.environment.framework_version_changed,
     }
 
 

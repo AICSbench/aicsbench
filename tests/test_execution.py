@@ -167,6 +167,8 @@ def test_version_probes_run_after_agent_and_before_acceptance(
     [r] = list(o.store.iter_trials(ResultFilter(run_id="r-probes")))
     assert r.status is TrialStatus.PASSED
     assert r.environment.installed_versions == {"language": "22.11.0", "framework": "4.21.0"}
+    # The stack takes no version ('4.21' is not exact), so nothing was checked.
+    assert r.environment.framework_version_changed is None and r.error is None
     calls = env.calls
     agent = next(
         i for i, c in enumerate(calls) if c[0] == "exec" and c[1][:2] == ["fake", "--prompt"]
@@ -231,6 +233,134 @@ def test_raising_version_probe_is_skipped(
     assert r.environment.installed_versions == {"language": "22.11.0"}
     messages = [rec.getMessage() for rec in caplog.records if rec.levelno == logging.WARNING]
     assert any("'framework'" in m and "exec failed" in m for m in messages)
+
+
+EXPRESS_FRAMEWORK_PROBE = "node -p \"require('express/package.json').version\""
+
+
+def test_selected_version_reaches_setup_prompt_and_result(env_settings: PlatformSettings) -> None:
+    env = FakeEnvironment(probe_results={EXPRESS_FRAMEWORK_PROBE: probe_result("5.2.1\n")})
+    o = build(env_settings, env)
+    o.run(experiment(stacks=["express-latest@5.2.1"]), run_id="r-version")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-version")))
+    assert r.status is TrialStatus.PASSED and r.error is None
+    assert r.environment.framework_version_changed is False
+    assert r.environment.stack == "express-latest@5.2.1"
+    assert r.environment.framework_version == "5.2.1"
+    [setup] = [c[1] for c in env.calls if c[0] == "exec" and "npm install" in c[1][-1]]
+    assert env.exec_env[setup[-1]] == {"FRAMEWORK_VERSION": "5.2.1"}
+    [prompt] = [c[1][2] for c in env.calls if c[0] == "exec" and c[1][:2] == ["fake", "--prompt"]]
+    assert "express 5.2.1" in prompt and "5.3.0" not in prompt
+
+
+@pytest.mark.parametrize("entry", ["express-latest", "express-latest@5.3.0"])
+def test_declared_version_keeps_the_plain_stack_label(
+    env_settings: PlatformSettings, entry: str
+) -> None:
+    env = FakeEnvironment(probe_results={EXPRESS_FRAMEWORK_PROBE: probe_result("5.3.0\n")})
+    o = build(env_settings, env)
+    o.run(experiment(stacks=[entry]), run_id="r-default")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-default")))
+    assert r.environment.stack == "express-latest"
+    assert r.environment.framework_version == "5.3.0" and r.error is None
+    [setup] = [c[1] for c in env.calls if c[0] == "exec" and "npm install" in c[1][-1]]
+    assert env.exec_env[setup[-1]] == {"FRAMEWORK_VERSION": "5.3.0"}
+
+
+FASTAPI_FRAMEWORK_PROBE = 'python -c "import fastapi; print(fastapi.__version__)"'
+
+
+@pytest.mark.parametrize(("installed", "changed"), [("0.100.0b1", False), ("0.100.0", True)])
+def test_python_prerelease_is_compared_as_a_release(
+    env_settings: PlatformSettings, installed: str, changed: bool
+) -> None:
+    # pip installs 'fastapi==0.100.0-beta.1' as the release that reports '0.100.0b1'.
+    env = FakeEnvironment(probe_results={FASTAPI_FRAMEWORK_PROBE: probe_result(installed)})
+    o = build(env_settings, env)
+    o.run(experiment(stacks=["fastapi-latest@0.100.0-beta.1"]), run_id="r-pre")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-pre")))
+    assert r.environment.framework_version == "0.100.0-beta.1"
+    assert r.environment.installed_versions["framework"] == installed
+    assert r.environment.framework_version_changed is changed
+
+
+def test_version_change_is_recorded_when_acceptance_setup_fails(
+    env_settings: PlatformSettings,
+) -> None:
+    env = FakeEnvironment(
+        fail_on="build_image", probe_results={EXPRESS_FRAMEWORK_PROBE: probe_result("5.3.0")}
+    )
+    o = build(env_settings, env)
+    o.run(experiment(stacks=["express-latest@5.2.1"]), run_id="r-infra")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-infra")))
+    assert r.status is TrialStatus.INFRA_ERROR
+    assert r.environment.framework_version_changed is True
+    assert r.error == (
+        "build_image failed; version changed during trial: express 5.3.0 is installed, "
+        "5.2.1 was selected"
+    )
+
+
+def test_repair_that_fails_before_its_probes_leaves_the_version_unchecked(
+    env_settings: PlatformSettings,
+) -> None:
+    class FailingRepairAdapter(FakeAdapter):
+        name = "failing-repair"
+
+        def run(self, task: Any, runner: Any) -> Any:
+            if "previous implementation failed" in task.prompt:
+                raise ExecutionEnvironmentError("container died during repair")
+            return super().run(task, runner)
+
+    env = FakeEnvironment(
+        junit=JUNIT_ONE_FAIL, probe_results={EXPRESS_FRAMEWORK_PROBE: probe_result("5.2.1")}
+    )
+    env.tester_exit = 1
+    o = build(env_settings, env)
+    o.registry.register(FailingRepairAdapter)
+    o.run(
+        experiment(
+            stacks=["express-latest@5.2.1"],
+            max_repairs=1,
+            agents=[AgentSelection(agent="failing-repair", model="m1")],
+        ),
+        run_id="r-repair-unprobed",
+    )
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-repair-unprobed")))
+    assert r.status is TrialStatus.INFRA_ERROR
+    assert r.error == "container died during repair"
+    # The first attempt's probe saw 5.2.1, but the final attempt was never probed.
+    assert r.environment.installed_versions == {}
+    assert r.environment.framework_version_changed is None
+
+
+def test_selected_version_without_framework_probe_output_is_not_checked(
+    env_settings: PlatformSettings,
+) -> None:
+    o = build(env_settings, FakeEnvironment())  # the framework probe prints nothing
+    o.run(experiment(stacks=["express-latest@5.2.1"]), run_id="r-unchecked")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-unchecked")))
+    assert "framework" not in r.environment.installed_versions
+    assert r.environment.framework_version_changed is None and r.error is None
+
+
+def test_installed_version_mismatch_is_warned_and_recorded_not_failed(
+    env_settings: PlatformSettings, caplog: pytest.LogCaptureFixture
+) -> None:
+    # The agent upgraded express during the trial.
+    env = FakeEnvironment(probe_results={EXPRESS_FRAMEWORK_PROBE: probe_result("5.3.0\n")})
+    o = build(env_settings, env)
+    with caplog.at_level(logging.WARNING):
+        o.run(experiment(stacks=["express-latest@5.2.1"]), run_id="r-mismatch")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-mismatch")))
+    assert r.status is TrialStatus.PASSED
+    assert r.environment.installed_versions["framework"] == "5.3.0"
+    assert r.environment.framework_version_changed is True
+    assert r.error == (
+        "version changed during trial: express 5.3.0 is installed, 5.2.1 was selected"
+    )
+    messages = [rec.getMessage() for rec in caplog.records if rec.levelno == logging.WARNING]
+    assert any("version changed during trial" in m for m in messages)
 
 
 def test_failed_tests_mark_trial_failed(env_settings: PlatformSettings) -> None:

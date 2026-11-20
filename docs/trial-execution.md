@@ -6,7 +6,13 @@ What `aicsbench run` does for each trial, in order. The code lives in
 ## 1. Images
 
 - **Stack image.** Pulled from the pinned `image`, or built from the stack's
-  `dockerfile` and tagged `ai-benchmark/stack-<id>:<hash>`.
+  `dockerfile` and tagged `ai-benchmark/stack-<id>:<hash>`. A stack with
+  `framework_version_param: true` is built with
+  `--build-arg FRAMEWORK_VERSION=<version>` (its Dockerfile declares
+  `ARG FRAMEWORK_VERSION`) and tagged `ai-benchmark/stack-<id>-<version>:<hash>`
+  (the version lowercased, as Docker requires; the hash covers the exact
+  version), so two versions never share a cached image. See
+  [Framework versions](#framework-versions).
 - **Agent image.** The agent's `AgentImageLayer` is added on top of the stack
   image and tagged `ai-benchmark/<stack>-<agent>:<hash>`. The hash covers the
   generated Dockerfile and the stack image ID, so a changed stack or agent
@@ -60,6 +66,19 @@ left out; probes never change the trial status. The export adds the columns
 `language_version_installed` and `framework_version_installed`; installed
 versions are informational only and are not part of `comparability_key`.
 
+After the trial (also when it ends in an infrastructure error after the
+probes ran), a stack that takes a version compares
+`installed_versions["framework"]` with the selected version: as PEP 440
+releases on Python stacks (a selected `0.100.0-beta.1` is installed as
+`0.100.0b1`), as exact strings otherwise. When they differ
+(the agent upgraded or downgraded the framework), the orchestrator logs a
+warning, sets `environment.framework_version_changed` to `true` and adds
+`version changed during trial: <framework> <installed> is installed,
+<selected> was selected` to the trial's `error`. The trial status does not
+change. When they match the flag is `false`; it stays `null` when nothing was
+checked (a stack without the parameter, or no framework probe output). Exports
+and the site export carry the flag as `framework_version_changed`.
+
 ## 5. Acceptance tests
 
 The agent never sees the suite itself. After each agent attempt:
@@ -92,6 +111,39 @@ and all of them pass), otherwise `failed`. With `stop_on_infra_error`, the
 trials not yet started are recorded as `cancelled`. Already running parallel
 trials finish and are recorded. Workspaces of `infra_error` trials are kept
 for debugging.
+
+## Framework versions
+
+A stack with `framework_version_param: true` (`express-latest`,
+`fastapi-latest` and `laravel13-boost`; `aicsbench stacks` marks them under
+`@version`) takes its framework version from the run. In `--stacks` or in an
+experiment config's `stacks`, write `<id>@<version>`, for example
+`express-latest@5.2.1`. Without `@`, the stack's `framework_version` is used.
+
+- The version must be exact: three numeric parts and an optional pre-release
+  tag (`5.2.1`, `5.3.0-beta.1`). Ranges and aliases (`^5.2`, `~5.2.0`, `*`,
+  `5.2.x`, `5.2`, `latest`) and `@version` on a stack without the parameter
+  are usage errors (exit 2), and nothing runs.
+- One run may hold several versions of one stack
+  (`express-latest@5.2.1,express-latest@5.3.0`). Entries must differ after
+  resolving: `express-latest` and `express-latest@5.3.0` (its default) are
+  the same trials, so the plan refuses both together.
+- Setup commands get `FRAMEWORK_VERSION` in their environment, and the image
+  build gets it as a build arg. `express-latest` runs
+  `npm install express@$FRAMEWORK_VERSION`, `fastapi-latest` installs
+  `fastapi==${FRAMEWORK_VERSION}` after its `requirements.txt`, and
+  `laravel13-boost` runs `composer require laravel/framework:$FRAMEWORK_VERSION`
+  on the pinned 13.11.0 starter (which needs 13.17.0 or later).
+- The agent's prompt (`$framework_version`) and `environment.framework_version`
+  say the selected version. `environment.stack` is `<id>@<version>` when the
+  version differs from the stack's default, and stays `<id>` otherwise, so
+  results from before version selection compare unchanged. `--by stack`
+  therefore shows each version as its own row; `--by framework` and
+  `--by language` group by name only and refuse a row that mixes declared
+  versions. `--stack` filters match the recorded label, such as
+  `--stack express-latest@5.2.1`.
+- `aicsbench run --dry-run` shows the resolved `<id>@<version>` of every
+  trial.
 
 ## Watching a run
 

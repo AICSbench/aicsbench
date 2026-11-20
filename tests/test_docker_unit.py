@@ -248,3 +248,46 @@ def test_build_timeout_is_an_infra_error(monkeypatch: Any, tmp_path: Path) -> No
     )
     with pytest.raises(ExecutionEnvironmentError, match="longer than 120s"):
         e.prepare_agent_image(ImageInfo(stack_id="fastapi", reference="python:3.12"), LAYER)
+
+
+def test_selected_version_builds_its_own_image_with_the_build_arg() -> None:
+    from ai_benchmark.config import SpecCatalog
+    from ai_benchmark.config.settings import PlatformSettings
+
+    from .conftest import REPO_ROOT
+
+    catalog = SpecCatalog(PlatformSettings(stacks_dir=REPO_ROOT / "benchmarks" / "stacks"))
+    tags: dict[str, str] = {}
+    for entry in ("express-latest@5.2.1", "express-latest", "express"):
+        cli = FakeCLI()
+        image = env(cli).prepare_image(catalog.get_stack(entry))
+        tags[entry] = image.reference
+        builds = [c for c in cli.calls if c[0] == "build"]
+        if entry == "express":
+            assert builds == []  # a prebuilt image: nothing to build, no version to pass
+            continue
+        [build] = builds
+        version = "5.2.1" if entry.endswith("5.2.1") else "5.3.0"
+        assert build[build.index("--build-arg") + 1] == f"FRAMEWORK_VERSION={version}"
+        assert build[build.index("-t") + 1] == image.reference
+    assert tags["express-latest@5.2.1"].startswith("ai-benchmark/stack-express-latest-5.2.1:")
+    assert tags["express-latest"].startswith("ai-benchmark/stack-express-latest-5.3.0:")
+
+
+def test_prerelease_with_uppercase_gets_a_valid_distinct_image_tag() -> None:
+    from ai_benchmark.config import SpecCatalog
+    from ai_benchmark.config.settings import PlatformSettings
+
+    from .conftest import REPO_ROOT
+
+    catalog = SpecCatalog(PlatformSettings(stacks_dir=REPO_ROOT / "benchmarks" / "stacks"))
+    tags = []
+    for entry in ("express-latest@5.3.0-RC.1", "express-latest@5.3.0-rc.1"):
+        cli = FakeCLI()
+        tag = env(cli).prepare_image(catalog.get_stack(entry)).reference
+        [build] = [c for c in cli.calls if c[0] == "build"]
+        assert build[build.index("--build-arg") + 1] == f"FRAMEWORK_VERSION={entry.split('@')[1]}"
+        repository = tag.partition(":")[0]
+        assert repository == repository.lower() == "ai-benchmark/stack-express-latest-5.3.0-rc.1"
+        tags.append(tag)
+    assert tags[0] != tags[1]  # case-distinct selections never share an image

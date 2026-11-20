@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -162,6 +163,36 @@ def test_shipped_stacks_declare_language_and_framework_probes(settings: Platform
     }
     for stack_id in ("fastapi", "laravel", "express"):
         assert set(catalog.get_stack(stack_id).version_probes) == {"language", "framework"}
+
+
+def test_shipped_stack_setup_commands_install_exact_versions(settings: PlatformSettings) -> None:
+    catalog = SpecCatalog(settings)
+    # A version range such as '^13.0', '~5.2', '5.*', 'pkg:*' or '5.x'; an exact
+    # version or $FRAMEWORK_VERSION passes (shell arithmetic like $((n * 3)) too).
+    version_range = re.compile(r"[\^~]\s*v?\d|\d\.\*|[@:=]\*|\d\.x\b")
+    for stack_id, stack in catalog.stacks().items():
+        for command in stack.setup_commands:
+            text = " ".join(command)
+            assert not version_range.search(text), (stack_id, text)
+    laravel = catalog.get_stack("laravel13-boost")
+    assert laravel.framework_version == "13.43.0"
+    assert all(c not in laravel.framework_version for c in "^~*")
+
+
+def test_versioned_stacks_take_the_version_from_the_run(settings: PlatformSettings) -> None:
+    catalog = SpecCatalog(settings)
+    versioned = {s.id for s in catalog.stacks().values() if s.framework_version_param}
+    assert versioned == {"express-latest", "fastapi-latest", "laravel13-boost"}
+    for stack_id in versioned:
+        stack = catalog.get_stack(stack_id)
+        # The prompt already says $framework_version; the notes must not contradict it.
+        assert stack.framework_version not in stack.environment_notes, stack_id
+        assert stack.dockerfile is not None
+        assert "ARG FRAMEWORK_VERSION" in stack.resolve(stack.dockerfile).read_text()
+    fastapi = catalog.get_stack("fastapi-latest")
+    assert fastapi.dockerfile is not None
+    requirements = fastapi.resolve(fastapi.dockerfile).parent / "requirements.txt"
+    assert "fastapi" not in requirements.read_text().lower()
 
 
 def test_shipped_task_has_its_acceptance_suite(settings: PlatformSettings) -> None:

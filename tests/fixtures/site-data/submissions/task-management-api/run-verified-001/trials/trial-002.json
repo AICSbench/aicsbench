@@ -36,8 +36,10 @@
     "agent_image_ref": null,
     "services": [],
     "installed_versions": {
-      "language": "3.13.1"
-    }
+      "language": "3.13.1",
+      "framework": "0.130.0"
+    },
+    "framework_version_changed": true
   },
   "tooling": {
     "mode": "standard",

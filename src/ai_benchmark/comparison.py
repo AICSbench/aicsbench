@@ -64,6 +64,13 @@ _EXPANSIONS: dict[ComparisonDimension, tuple[ComparisonDimension, ...]] = {
 
 _AXIS_PLURAL = {"harness": "harnesses", "model": "models", "stack": "stacks"}
 
+# Dimensions that group by a name only. One row must not average different
+# declared versions of that name (task 8): those are compared by stack.
+_VERSIONED_NAMES: dict[ComparisonDimension, str] = {
+    ComparisonDimension.FRAMEWORK: "framework",
+    ComparisonDimension.LANGUAGE: "language",
+}
+
 
 @dataclass(frozen=True)
 class ComparisonRow:
@@ -198,6 +205,16 @@ def compare_trials(
     for trial in trials:
         values = tuple(trial.dimension_value(item) for item in dimensions)
         groups.setdefault(values, []).append(trial)
+
+    for item, name in _VERSIONED_NAMES.items():
+        if item in dimensions and any(
+            len({getattr(trial.environment, f"{name}_version") for trial in group}) > 1
+            for group in groups.values()
+        ):
+            raise ValueError(
+                f"{name} comparison mixes versions of one {name}; "
+                "compare by stack or filter to one version"
+            )
 
     rows = []
     for values, group in groups.items():

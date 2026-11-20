@@ -6,11 +6,32 @@ requires changing platform code.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
+from typing import Any
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, PrivateAttr, field_validator, model_validator
 
 from ai_benchmark.config._base import SLUG_PATTERN, StrictModel
+
+# An exact version selected with ``<stack id>@<version>``: three numeric parts
+# and an optional pre-release tag. No ranges, and nothing that could be shell
+# syntax, because the value reaches setup commands and docker build args.
+FRAMEWORK_VERSION_PATTERN = r"^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$"
+_FRAMEWORK_VERSION_RE = re.compile(FRAMEWORK_VERSION_PATTERN)
+
+
+def split_stack_ref(entry: str) -> tuple[str, str | None]:
+    """Split a stack entry ``id`` or ``id@version``; raise ValueError for a bad version."""
+    stack_id, separator, version = entry.partition("@")
+    if not separator:
+        return stack_id, None
+    if not _FRAMEWORK_VERSION_RE.fullmatch(version):
+        raise ValueError(
+            f"stack '{entry}': version '{version}' must be an exact x.y.z version with an "
+            "optional pre-release tag (such as 5.2.1 or 5.3.0-beta.1), not a range or alias"
+        )
+    return stack_id, version
 
 
 def _is_pinned(image: str) -> bool:
@@ -87,11 +108,23 @@ class StackSpec(StrictModel):
         "meaning; any other name records an extra component. Each command prints only the "
         "version on stdout.",
     )
+    framework_version_param: bool = Field(
+        default=False,
+        description="The framework version can be chosen per run with '<id>@<version>'. "
+        "Setup commands get it as the FRAMEWORK_VERSION environment variable and the "
+        "Dockerfile as the FRAMEWORK_VERSION build arg; the default is framework_version.",
+    )
     services: list[ServiceSpec] = Field(default_factory=list)
     resources: ResourceLimits = Field(default_factory=ResourceLimits)
     source_dir: Path | None = Field(
         default=None, exclude=True, description="Set by the loader; not part of the file."
     )
+    # The version the stack file declares; framework_version differs from it
+    # only on a copy made by with_version().
+    _declared_version: str = PrivateAttr(default="")
+
+    def model_post_init(self, context: Any, /) -> None:
+        self._declared_version = self.framework_version
 
     @model_validator(mode="after")
     def _image_source(self) -> StackSpec:
@@ -108,6 +141,35 @@ class StackSpec(StrictModel):
         if path.is_absolute() or self.source_dir is None:
             return path
         return self.source_dir / path
+
+    def with_version(self, version: str | None) -> StackSpec:
+        """This stack with ``version`` selected (``None`` keeps the declared one)."""
+        if version is None:
+            return self
+        if not self.framework_version_param:
+            raise ValueError(
+                f"stack '{self.id}' does not accept a framework version; "
+                f"remove '@{version}' (it installs {self.framework} {self.framework_version})"
+            )
+        return self.model_copy(update={"framework_version": version})
+
+    @property
+    def ref(self) -> str:
+        """``id``, or ``id@version`` when a version other than the declared one is selected.
+
+        Recorded as ``environment.stack``, so trials of the declared version keep
+        the plain id and stay comparable with results from before version selection.
+        """
+        if self.framework_version == self._declared_version:
+            return self.id
+        return f"{self.id}@{self.framework_version}"
+
+    @property
+    def build_args(self) -> dict[str, str]:
+        """Docker build args and setup command environment for the selected version."""
+        if not self.framework_version_param:
+            return {}
+        return {"FRAMEWORK_VERSION": self.framework_version}
 
     @property
     def label(self) -> str:

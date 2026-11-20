@@ -26,11 +26,17 @@ class PlannedTrial(BaseModel):
     execution_order: int = Field(ge=0)
     trial_index: int = Field(ge=0, description="0-based repetition number for this combination.")
     agent: AgentSelection
-    stack_id: str
+    stack_id: str = Field(description="The experiment's stack entry: 'id' or 'id@version'.")
+    framework_version: str = Field(description="The framework version this trial installs.")
 
     @property
     def combination(self) -> str:
         return f"{self.agent.key} @ {self.stack_id}"
+
+    @property
+    def resolved_stack(self) -> str:
+        """``id@version`` with the version resolved, also for an entry without ``@``."""
+        return f"{self.stack_id.partition('@')[0]}@{self.framework_version}"
 
 
 class ExperimentPlan(BaseModel):
@@ -66,12 +72,20 @@ def build_plan(
     unknown = [s for s in config.stacks if s not in stacks]
     if unknown:
         raise PlanningError(f"unknown stacks: {', '.join(unknown)}")
-    unsupported = [s for s in config.stacks if not task.supports(s)]
+    unsupported = [s for s in config.stacks if not task.supports(stacks[s].id)]
     if unsupported:
         raise PlanningError(
             f"task '{task.id}' does not support stacks: {', '.join(unsupported)} "
             f"(supported: {', '.join(task.supported_stacks)})"
         )
+    # 'express-latest' and 'express-latest@5.3.0' (its declared version) are
+    # different entries but the same trials; running both would double them.
+    seen: dict[str, str] = {}
+    for entry in config.stacks:
+        ref = stacks[entry].ref
+        if ref in seen:
+            raise PlanningError(f"stacks '{seen[ref]}' and '{entry}' select the same version")
+        seen[ref] = entry
 
     seed = config.seed if config.seed is not None else secrets.randbits(32)
     n_trials = config.trials or task.default_trials
@@ -92,6 +106,7 @@ def build_plan(
             trial_index=i,
             agent=agent,
             stack_id=stack_id,
+            framework_version=stacks[stack_id].framework_version,
         )
         for order, (agent, stack_id, i) in enumerate(combos)
     ]

@@ -21,6 +21,7 @@ from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from pathlib import Path
 
+from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_benchmark import __version__
@@ -73,6 +74,23 @@ log = logging.getLogger(__name__)
 TrialCallback = Callable[[TrialResult], None]
 
 _VERSION_PROBE_TIMEOUT_SECONDS = 30
+# Start of the note recorded in a trial's error when the installed framework is not
+# the selected version; the site marks such trials as "version changed during trial".
+VERSION_CHANGED_NOTE = "version changed during trial"
+
+
+def _same_version(stack: StackSpec, installed: str, selected: str) -> bool:
+    """Whether ``installed`` is the ``selected`` release.
+
+    Python packages report their version in PEP 440 normal form, so a selected
+    '0.100.0-beta.1' is installed as '0.100.0b1'; compare those as releases.
+    """
+    if stack.language == "python":
+        try:
+            return Version(installed) == Version(selected)
+        except InvalidVersion:
+            pass
+    return installed == selected
 
 
 class PreflightIssue(BaseModel):
@@ -347,7 +365,7 @@ class BenchmarkOrchestrator:
                 resolved_model=trial.agent.model,
             ),
             environment=EnvironmentRecord(
-                stack=stack.id,
+                stack=stack.ref,
                 language=stack.language,
                 language_version=stack.language_version,
                 framework=stack.framework,
@@ -408,6 +426,7 @@ class BenchmarkOrchestrator:
                     cmd,
                     timeout_seconds=plan.timeouts.setup_seconds,
                     workdir=stack.workdir,
+                    env=stack.build_args,
                     stdout_path=log_dir / f"setup-{i}.stdout.log",
                     stderr_path=log_dir / f"setup-{i}.stderr.log",
                 )
@@ -427,6 +446,9 @@ class BenchmarkOrchestrator:
                     # The previous attempt's work is committed; drop only what its
                     # acceptance run left behind before the agent repairs it.
                     discard_untracked(runner, stack.workdir)
+                    # The previous probes describe the previous attempt; if this one
+                    # fails before its own probes, nothing was observed for it.
+                    result.environment.installed_versions = {}
                 agent_task = AgentTask(
                     trial_id=trial.trial_id,
                     prompt=prompt,
@@ -506,6 +528,9 @@ class BenchmarkOrchestrator:
                 self._cleanup(handle, log_dir, result)
             if not self.settings.keep_workspaces and result.status is not TrialStatus.INFRA_ERROR:
                 self.workspaces.remove(plan.run_id, trial.trial_id)
+        # Also after an infrastructure error: probes that already ran still show
+        # whether the agent changed the framework version.
+        self._check_selected_version(trial, stack, result)
         result.finished_at = utcnow()
         result.metrics.performance.total_wall_clock_seconds = Metric[float].of(
             wall.stop(), MetricSource.MEASURED, unit="s"
@@ -661,6 +686,30 @@ class BenchmarkOrchestrator:
                 name,
                 why,
             )
+
+    def _check_selected_version(
+        self, trial: PlannedTrial, stack: StackSpec, result: TrialResult
+    ) -> None:
+        """Record whether the installed framework is still the selected version.
+
+        Only stacks that take a version install an exact one; for the others
+        ``framework_version_changed`` stays None (not checked). The agent may
+        have changed the version on purpose, so the trial keeps its status; a
+        change is warned, flagged for exports and noted in ``error``.
+        """
+        installed = result.environment.installed_versions.get("framework")
+        if not stack.framework_version_param or installed is None:
+            return
+        changed = not _same_version(stack, installed, stack.framework_version)
+        result.environment.framework_version_changed = changed
+        if not changed:
+            return
+        note = (
+            f"{VERSION_CHANGED_NOTE}: {stack.framework} {installed} is installed, "
+            f"{stack.framework_version} was selected"
+        )
+        log.warning("trial %s: %s", trial.trial_id, note)
+        result.error = "; ".join(filter(None, [result.error, note]))
 
     def run_acceptance_tests(
         self,

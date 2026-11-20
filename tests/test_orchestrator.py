@@ -58,6 +58,20 @@ def test_plan_uses_task_default_trials(settings: PlatformSettings) -> None:
     assert plan.trials_per_combination == 3
 
 
+def test_plan_runs_versions_of_one_stack_side_by_side(settings: PlatformSettings) -> None:
+    o = make(settings)
+    plan = o.plan(config(stacks=["express-latest@5.2.1", "express-latest"], trials=1), "r1")
+    assert sorted(t.resolved_stack for t in plan.trials) == [
+        "express-latest@5.2.1",
+        "express-latest@5.2.1",
+        "express-latest@5.3.0",
+        "express-latest@5.3.0",
+    ]
+    # The declared version under both spellings would run the same trials twice.
+    with pytest.raises(PlanningError, match="select the same version"):
+        o.plan(config(stacks=["express-latest", "express-latest@5.3.0"]), "r1")
+
+
 def test_plan_rejects_unsupported_stack(settings: PlatformSettings, tmp_path: Path) -> None:
     (tmp_path / "go.yaml").write_text(
         "id: gin\nlanguage: go\nlanguage_version: '1.23'\nframework: gin\n"

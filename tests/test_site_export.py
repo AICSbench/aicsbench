@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from dataclasses import asdict
@@ -199,6 +200,39 @@ def test_export_accepts_task_9_trial_row_keys(
     assert {(row["provider"], row["endpoint_host"]) for row in rows} == {  # type: ignore[union-attr]
         ("openai", "custom")
     }
+    jsonschema.validate(rows, load(out, "schema/trials.schema.json"))
+
+
+def test_export_flags_a_framework_version_changed_during_the_trial(
+    fixture_data: Path, tmp_path: Path
+) -> None:
+    """Task 8: the flag core recorded is exported as is; the site never recomputes it."""
+    # A trial stored before version selection has no flag at all.
+    older = make_trial("run-older-001", 1, stack="laravel")
+    bundle = write_bundle(fixture_data, [older], submitted_at=BUILT_AT)
+    trial_file = bundle / "trials" / "trial-001.json"
+    payload = json.loads(trial_file.read_text(encoding="utf-8"))
+    del payload["environment"]["framework_version_changed"]
+    trial_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    submission = json.loads((bundle / "submission.json").read_text(encoding="utf-8"))
+    submission["files"]["trials/trial-001.json"] = hashlib.sha256(
+        trial_file.read_bytes()
+    ).hexdigest()
+    (bundle / "submission.json").write_text(json.dumps(submission, indent=2) + "\n", "utf-8")
+
+    out = tmp_path / "out"
+    run_export(fixture_data, out)
+    rows = load(out, "data/trials.json")
+    flags = {
+        (row["run_id"], row["trial_id"]): row["framework_version_changed"]  # type: ignore[index]
+        for row in rows  # type: ignore[union-attr]
+    }
+    assert flags[("run-verified-001", "trial-001")] is False
+    assert flags[("run-verified-001", "trial-002")] is True
+    assert flags[("run-verified-001", "trial-003")] is None
+    assert flags[("run-older-001", "trial-001")] is None
+    # Only the trial core flagged is marked, whatever the other version keys say.
+    assert sum(flag is True for flag in flags.values()) == 1
     jsonschema.validate(rows, load(out, "schema/trials.schema.json"))
 
 

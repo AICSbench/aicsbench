@@ -13,4 +13,8 @@ COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 ENV COMPOSER_NO_INTERACTION=1 \
     COMPOSER_ALLOW_SUPERUSER=0
 
+# Setup commands install laravel/framework ${FRAMEWORK_VERSION} into the workspace.
+# Declaring the build arg gives each selected version its own image.
+ARG FRAMEWORK_VERSION
+
 WORKDIR /workspace

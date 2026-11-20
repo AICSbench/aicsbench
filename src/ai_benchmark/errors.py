@@ -37,5 +37,9 @@ class PlanningError(BenchmarkError):
     """An experiment configuration cannot be expanded into a valid plan."""
 
 
+class StackSelectionError(ConfigurationError):
+    """A stack entry selects a framework version the stack cannot take (a usage error)."""
+
+
 class SubmissionError(BenchmarkError):
     """A run cannot be packed into a bundle or sent to the data repository."""

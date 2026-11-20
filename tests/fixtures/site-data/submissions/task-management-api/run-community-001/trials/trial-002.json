@@ -37,7 +37,8 @@
     "services": [],
     "installed_versions": {
       "language": "8.4.1"
-    }
+    },
+    "framework_version_changed": null
   },
   "tooling": {
     "mode": "standard",

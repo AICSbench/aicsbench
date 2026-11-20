@@ -35,7 +35,7 @@ def test_flat_export_keeps_unavailable_metrics_null() -> None:
     assert row["input_tokens"] is None
     assert (row["harness"], row["harness_version"]) == ("codex", "0.167.2")
     assert (row["requested_model"], row["reasoning_effort"]) == ("gpt-6-luna", "high")
-    assert list(row)[-8:] == [
+    assert list(row)[-9:] == [
         "harness",
         "harness_version",
         "requested_model",
@@ -44,6 +44,7 @@ def test_flat_export_keeps_unavailable_metrics_null() -> None:
         "framework_version_installed",
         "provider",
         "endpoint_host",
+        "framework_version_changed",
     ]
     csv_row = next(csv.DictReader(io.StringIO(export_trials([item], "csv"))))
     assert csv_row["agent_seconds"] == "7.5" and csv_row["cost_usd"] == ""
@@ -75,11 +76,12 @@ def test_export_adds_installed_version_columns() -> None:
     row = json.loads(export_trials([item], "jsonl"))
     assert row["language_version_installed"] == "3.12.7"
     assert row["framework_version_installed"] == "0.115.2"
-    assert list(row)[-4:] == [
+    assert list(row)[-5:] == [
         "language_version_installed",
         "framework_version_installed",
         "provider",
         "endpoint_host",
+        "framework_version_changed",
     ]
 
 
@@ -95,6 +97,8 @@ def test_export_reads_trials_saved_before_installed_versions(tmp_path: Path) -> 
     row = next(csv.DictReader(io.StringIO(export_trials(trials, "csv"))))
     assert row["language_version"] == "3.12"  # the declared version is unchanged
     assert row["language_version_installed"] == "" and row["framework_version_installed"] == ""
+    # Recorded before version selection: the mismatch was never checked.
+    assert row["framework_version_changed"] == ""
 
 
 def test_comparability_ignores_installed_versions() -> None:

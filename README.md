@@ -51,6 +51,8 @@ aicsbench validate-submission PATH... # validate submission bundles
 aicsbench submit --run RUN_ID [--dry-run | --out DIR] [--with-logs]  # submit a run
 aicsbench run --agents codex,claude:<model> --task task-management-api \
               --stacks fastapi,laravel --trials 5 --auth subscription --dry-run
+aicsbench run --agents codex:<model> --task task-management-api \
+              --stacks express-latest@5.2.1,express-latest@5.3.0 --dry-run
 aicsbench run --config examples/experiment.yaml --dry-run
 aicsbench results [--harness-version 0.167.2 --stack Y --mode standard --not-rate-limited ...]
 aicsbench compare --run RUN_ID --by stack [--agent codex --model gpt-6-luna]
@@ -96,6 +98,21 @@ aicsbench run --agents codex:gpt-6-luna --task task-management-api \
               --stacks fastapi-latest,laravel13-boost,express-latest \
               --trials 20 --auth subscription
 ```
+
+Stacks marked `@version` in `aicsbench stacks` (`express-latest`,
+`fastapi-latest` and `laravel13-boost`) take the framework version per run:
+`--stacks express-latest@5.2.1`, or the same `id@version` entry in an
+experiment config's `stacks`. The version must be exact (`x.y.z` with an
+optional pre-release tag such as `5.3.0-beta.1`); ranges such as `^5.2`,
+`5.2.x` or `5.2` are refused, and so is `@version` on any other stack. The
+agent's prompt (`$framework_version`) and `environment.framework_version`
+use the selected version. A trial of a version other than the stack's default
+is recorded as stack `<id>@<version>`, so `compare --by stack` shows each
+version as its own row; `--by framework` and `--by language` refuse to pool
+different versions of one framework or language. One run may hold several
+versions of one stack (`express-latest@5.2.1,express-latest@5.3.0`).
+`laravel13-boost` defaults to Laravel 13.43.0 with Boost 2.10.4 from the
+13.11.0 starter, which needs `laravel/framework` 13.17.0 or later.
 
 The [20-trial Luna results](docs/luna-latest-20-trials.md) record the run IDs,
 test outcomes, timing, token use, cost estimate, and differences in each
