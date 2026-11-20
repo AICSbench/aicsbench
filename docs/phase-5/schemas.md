@@ -179,6 +179,10 @@ keys, all added to `trial_row` itself so CSV/JSONL exports get them too:
 | `language_version_installed` | `environment.installed_versions["language"]` (task 7; the existing `language_version` key stays the version the stack declares) |
 | `framework_version_installed` | `environment.installed_versions["framework"]` (task 7; the existing `framework_version` key stays the version the stack declares) |
 
+Until task 9 records them, `provider` and `endpoint_host` are `null` in the
+export (`TrialRow` defaults them); task 9's own `unknown` and `custom` values
+apply only once `trial_row` emits the keys.
+
 and these keys added only in the export:
 
 | Key | Source |

@@ -228,7 +228,7 @@ def compare_matrix(
     filters: ResultFilter | None = None,
     min_trials: int = 3,
     *,
-    suite_by_run: Mapping[str, str] | None = None,
+    suite_by_run: Mapping[str, str | None] | None = None,
 ) -> ComparisonMatrix:
     """Compare the same groups across several tasks (docs/phase-5/tasks/05-compare-page.md).
 

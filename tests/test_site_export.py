@@ -330,6 +330,19 @@ def test_colliding_suffixed_slugs_fail_and_write_nothing(tmp_path: Path) -> None
     assert [file.name for file in out.iterdir()] == ["keep.txt"]
 
 
+def test_out_may_not_be_a_symlinked_submissions_target(tmp_path: Path) -> None:
+    from ai_benchmark.site.export import SiteExportError
+
+    real = tmp_path / "data-real"
+    write_fixture_data(real)
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "submissions").symlink_to(real / "submissions", target_is_directory=True)
+    with pytest.raises(SiteExportError):
+        run_export(data, real / "submissions")
+    assert len(trials_of(real)) == 5
+
+
 @pytest.mark.parametrize("relative", ["submissions", "submissions/out", "."])
 def test_out_may_not_hold_the_bundles(fixture_data: Path, relative: str) -> None:
     from ai_benchmark.site.export import SiteExportError
@@ -449,6 +462,13 @@ def test_cli_compare_tasks_prints_matrix(tmp_path: Path) -> None:
     result = runner.invoke(app, [*base, "--matrix", "a,b,c"], terminal_width=250)
     assert result.exit_code == 0, result.output
     assert "incomplete" in result.output and "refused" in result.output
-    single = runner.invoke(app, [*base, "--tasks", "a"])
-    plain = runner.invoke(app, [*base, "--task", "a"])
+    other_suite = make_trial("r-a-other", 7, task="a", harness="codex", model="x")
+    other = manifest(other_suite.run_id).model_copy(update={"acceptance_suite_sha256": "e" * 64})
+    store.save_manifest(other)
+    store.save_trial(other_suite)
+    mixed = runner.invoke(app, [*base, "--matrix", "a,b"], terminal_width=250)
+    assert mixed.exit_code == 0, mixed.output
+    assert "acceptance" in mixed.output and "refused" in mixed.output
+    single = runner.invoke(app, [*base, "--tasks", "b"])
+    plain = runner.invoke(app, [*base, "--task", "b"])
     assert single.exit_code == 0 and single.output == plain.output

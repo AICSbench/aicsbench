@@ -600,8 +600,15 @@ def compare(
     try:
         dimensions = _dimensions(by)
         if columns:
+            trials = list(store.iter_trials(filters))
+            # Each column must hold one acceptance suite; a run without a recorded
+            # hash counts as its own (unknown) suite, so it never pools with a known one.
+            suites = {
+                run: store.load_manifest(run).acceptance_suite_sha256
+                for run in {trial.run_id for trial in trials}
+            }
             matrix = compare_matrix(
-                list(store.iter_trials(filters)), dimensions, columns, filters, min_trials
+                trials, dimensions, columns, filters, min_trials, suite_by_run=suites
             )
             _print_matrix(matrix, dimensions)
             return

@@ -84,7 +84,7 @@ def export_site(
     data_dir, out_dir = data_dir.resolve(), out_dir.resolve()
     if not (data_dir / "submissions").is_dir():
         raise SiteExportError(f"no submissions/ folder in {data_dir}")
-    submissions = data_dir / "submissions"
+    submissions = (data_dir / "submissions").resolve()
     if out_dir == data_dir or out_dir in data_dir.parents or out_dir.is_relative_to(submissions):
         raise SiteExportError(f"--out {out_dir} would delete bundles in the data folder {data_dir}")
 
