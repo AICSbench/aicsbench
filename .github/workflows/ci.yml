@@ -28,7 +28,13 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
           cache-dependency-path: pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - run: python -m pip install -e '.[dev]'
+      # The pinned OpenCode CLI keeps the custom-endpoint loader regression
+      # (tests/test_custom_endpoints.py::..._in_the_real_loader) from skipping.
+      - run: npm install -g --no-audit --no-fund opencode-ai@1.19.5
       - run: ruff check src tests benchmarks
       - run: ruff format --check src tests benchmarks
       - run: mypy src
