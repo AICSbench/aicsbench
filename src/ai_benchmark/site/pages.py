@@ -182,7 +182,7 @@ def leaderboard_sections(data: SiteData, task_path: Callable[[str], str]) -> lis
             ComparisonDimension.HARNESS_MODEL,
             tasks,
             ResultFilter(stack=stack),
-            suite_by_run=data.suite_by_run,
+            suite_of=data.suite_by_run.get,
         )
         result.append(
             Section(

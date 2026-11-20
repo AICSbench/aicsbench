@@ -471,6 +471,10 @@ def test_cli_compare_tasks_prints_matrix(tmp_path: Path) -> None:
     store.save_manifest(manifest(unrelated.run_id))
     store.save_trial(unrelated)
     (tmp_path / "results" / "r-unrelated" / "manifest.json").write_text("{broken")
+    old_version = make_trial("r-a-old", 9, task="a", version="1")
+    store.save_manifest(manifest(old_version.run_id))
+    store.save_trial(old_version)
+    (tmp_path / "results" / "r-a-old" / "manifest.json").write_text("{broken")
     mixed = runner.invoke(app, [*base, "--matrix", "a,b"], terminal_width=250)
     assert mixed.exit_code == 0, mixed.output
     assert "acceptance" in mixed.output and "refused" in mixed.output

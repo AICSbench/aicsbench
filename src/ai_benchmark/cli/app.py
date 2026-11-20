@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 from dataclasses import dataclass
@@ -601,15 +602,12 @@ def compare(
         dimensions = _dimensions(by)
         if columns:
             trials = list(store.iter_trials(filters))
-            requested = {column.partition("@")[0] for column in columns}
             # Each column must hold one acceptance suite; a run without a recorded
             # hash counts as its own (unknown) suite, so it never pools with a known one.
-            suites = {
-                run: store.load_manifest(run).acceptance_suite_sha256
-                for run in {trial.run_id for trial in trials if trial.task_id in requested}
-            }
+            # Manifests are read only for runs in the selected columns.
+            suite_of = functools.cache(lambda run: store.load_manifest(run).acceptance_suite_sha256)
             matrix = compare_matrix(
-                trials, dimensions, columns, filters, min_trials, suite_by_run=suites
+                trials, dimensions, columns, filters, min_trials, suite_of=suite_of
             )
             _print_matrix(matrix, dimensions)
             return

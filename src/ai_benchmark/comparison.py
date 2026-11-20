@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from statistics import mean, stdev
 
@@ -228,15 +228,16 @@ def compare_matrix(
     filters: ResultFilter | None = None,
     min_trials: int = 3,
     *,
-    suite_by_run: Mapping[str, str | None] | None = None,
+    suite_of: Callable[[str], str | None] | None = None,
 ) -> ComparisonMatrix:
     """Compare the same groups across several tasks (docs/phase-5/tasks/05-compare-page.md).
 
     ``tasks`` are task IDs, each optionally ``<id>@<version>``; without a version
     the newest version among the filtered trials is used. Each column is
     exactly ``compare_trials(by=rows)`` on that task version's filtered trials,
-    so its refusals apply per column. ``suite_by_run`` maps run IDs to their
-    acceptance suite hash; when given, a column mixing suites is refused too.
+    so its refusals apply per column. ``suite_of`` returns a run's
+    acceptance suite hash; when given, a column mixing suites is refused too. It
+    is called only for runs in the selected columns.
 
     Overall: the unweighted mean of the per-column success rates and the mean
     rank, over the columns that are not refused. Complete rows come first, by
@@ -259,7 +260,7 @@ def compare_matrix(
         column_trials = [trial for trial in of_task if trial.task_version == version]
         refused: str | None = None
         column_rows: list[ComparisonRow] = []
-        suites = {suite_by_run.get(t.run_id) for t in column_trials} if suite_by_run else set()
+        suites = {suite_of(t.run_id) for t in column_trials} if suite_of else set()
         if len(suites) > 1:
             refused = SUITE_REFUSAL
         else:
