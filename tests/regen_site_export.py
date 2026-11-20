@@ -84,6 +84,9 @@ def make_trial(
         tooling=ToolingRecord(mode=ToolingMode.STANDARD),
         started_at=datetime(2026, 11, 17, 7, tzinfo=timezone.utc) + timedelta(hours=index),
     )
+    if "provider" in AgentRecord.model_fields:
+        # Task 9 refuses harness comparisons over trials without a provider.
+        trial.agent.provider = AgentRecord.default_provider(harness, model)  # type: ignore[attr-defined]
     if seconds is not None:
         trial.metrics.performance.agent_execution_seconds = Metric[float].of(
             seconds, MetricSource.MEASURED

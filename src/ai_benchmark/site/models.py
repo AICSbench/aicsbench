@@ -76,6 +76,10 @@ class TrialRow(_Strict):
     reasoning_effort: str | None
     language_version_installed: str | None
     framework_version_installed: str | None
+    # Task 9 keys. Defaulted so the export works whether or not ``trial_row``
+    # emits them yet; trials recorded without them export null.
+    provider: str | None = None
+    endpoint_host: str | None = None
     # Export-only keys.
     verified: bool
     logs_available: bool

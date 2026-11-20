@@ -174,6 +174,8 @@ keys, all added to `trial_row` itself so CSV/JSONL exports get them too:
 | `harness_version` | `agent.version`; task 1 |
 | `requested_model` | `agent.requested_model`; task 1 |
 | `reasoning_effort` | `agent.reasoning_effort`; task 1 |
+| `provider` | `agent.provider`, the model provider or gateway slug (`unknown` when not recorded); task 9 |
+| `endpoint_host` | `agent.endpoint_host`, the custom endpoint's base-URL host (`custom` when submit hid a private gateway address); task 9 |
 | `language_version_installed` | `environment.installed_versions["language"]` (task 7; the existing `language_version` key stays the version the stack declares) |
 | `framework_version_installed` | `environment.installed_versions["framework"]` (task 7; the existing `framework_version` key stays the version the stack declares) |
 

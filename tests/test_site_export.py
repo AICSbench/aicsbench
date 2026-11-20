@@ -148,6 +148,27 @@ def test_unavailable_means_are_null_not_zero() -> None:
     assert row["success_rate"] == 0
 
 
+def test_export_accepts_task_9_trial_row_keys(
+    fixture_data: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``trial_row`` gains provider and endpoint_host with task 9; the export must keep up."""
+    import ai_benchmark.site.export as export_module
+
+    original = export_module.trial_row
+
+    def with_provider(trial: TrialResult) -> dict[str, object]:
+        return {**original(trial), "provider": "openai", "endpoint_host": "custom"}
+
+    monkeypatch.setattr(export_module, "trial_row", with_provider)
+    out = tmp_path / "out"
+    run_export(fixture_data, out)
+    rows = load(out, "data/trials.json")
+    assert {(row["provider"], row["endpoint_host"]) for row in rows} == {  # type: ignore[union-attr]
+        ("openai", "custom")
+    }
+    jsonschema.validate(rows, load(out, "schema/trials.schema.json"))
+
+
 # --- leaderboards are compare_trials ------------------------------------------
 
 
