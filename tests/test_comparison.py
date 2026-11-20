@@ -291,3 +291,68 @@ def test_compare_cli_harness_version_and_unknown_dimension(tmp_path: Path) -> No
     bad = runner.invoke(app, [*args, "--by", "nope"])
     assert bad.exit_code == 1
     assert "unknown --by value 'nope'" in bad.output
+
+
+def _versioned(trial_id: str, stack: str, framework_version: str) -> TrialResult:
+    item = _modeled(trial_id, model="m1", stack=stack)
+    item.environment.framework = "express"
+    item.environment.framework_version = framework_version
+    return item
+
+
+def test_two_versions_of_one_stack_are_two_stack_rows_and_no_framework_row(
+    tmp_path: Path,
+) -> None:
+    store = JsonResultStore(tmp_path)
+    store.save_manifest(manifest("r1"))
+    for index in range(2):
+        store.save_trial(_versioned(f"old{index}", "express-latest@5.2.1", "5.2.1"))
+        store.save_trial(_versioned(f"new{index}", "express-latest", "5.3.0"))
+    runner = CliRunner()
+    args = ["--results-dir", str(tmp_path), "compare", "--run", "r1"]
+
+    by_stack = runner.invoke(app, [*args, "--by", "stack"])
+    assert by_stack.exit_code == 0, by_stack.output
+    # The table wraps long labels in a narrow terminal; the CSV report has the rows.
+    report = runner.invoke(
+        app, ["--results-dir", str(tmp_path), "report", "--run", "r1", "--format", "csv"]
+    )
+    assert report.exit_code == 0, report.output
+    stacks = sorted(line.split(",")[0] for line in report.output.splitlines()[1:])
+    assert stacks == ["express-latest", "express-latest@5.2.1"]
+
+    by_framework = runner.invoke(app, [*args, "--by", "framework"])
+    assert by_framework.exit_code == 1
+    assert (
+        "framework comparison mixes versions of one framework; compare by stack or filter "
+        "to one version" in " ".join(by_framework.output.split())
+    )
+
+
+def test_framework_and_language_refuse_versions_declared_by_two_stack_files() -> None:
+    four = _versioned("a", "express", "4.21")
+    five = _versioned("b", "express-latest", "5.3.0")
+    with pytest.raises(ValueError, match="framework comparison mixes versions of one framework"):
+        compare_trials([four, five], ComparisonDimension.FRAMEWORK)
+    five.environment.framework_version = "4.21"
+    five.environment.language_version = "3.15.2"
+    assert [row.trials for row in compare_trials([four, five], ComparisonDimension.FRAMEWORK)] == [
+        2
+    ]
+    with pytest.raises(ValueError, match="language comparison mixes versions of one language"):
+        compare_trials([four, five], ComparisonDimension.LANGUAGE)
+
+
+def test_stored_trials_from_before_version_selection_compare_as_before() -> None:
+    trials_dir = (
+        Path(__file__).parent
+        / "fixtures/submissions/submissions/task-management-api/run-fixture-001/trials"
+    )
+    trials = [
+        TrialResult.model_validate_json(path.read_text(encoding="utf-8"))
+        for path in sorted(trials_dir.glob("trial-*.json"))
+    ]
+    assert [t.environment.stack for t in trials] == ["fastapi", "fastapi"]
+    for dimension in (ComparisonDimension.STACK, ComparisonDimension.FRAMEWORK):
+        [row] = compare_trials(trials, dimension)
+        assert (row.value, row.trials, row.passed) == ("fastapi", 2, 1)

@@ -254,13 +254,22 @@ class DockerExecutionEnvironment(ExecutionEnvironment):
         out = self.cli.run(["image", "inspect", "--format", "{{.Id}}", ref]).stdout
         return out.strip()
 
-    def _build(self, tag: str, dockerfile_text: str, context: Path) -> None:
+    def _build(
+        self,
+        tag: str,
+        dockerfile_text: str,
+        context: Path,
+        build_args: Mapping[str, str] | None = None,
+    ) -> None:
         # Builds can take minutes (toolchains, agent CLIs), so stream the output
         # to a log file, report the current step while it runs, and bound it.
         build_log = _build_log_path(tag)
         limit = self.settings.build_timeout_seconds
         log.info("building image %s (limit %ds), log: %s", tag, limit, build_log)
-        args = ["build", "-t", tag, *self._label_args(), "-f", "-", str(context)]
+        args = ["build", "-t", tag, *self._label_args()]
+        for name, value in (build_args or {}).items():
+            args += ["--build-arg", f"{name}={value}"]
+        args += ["-f", "-", str(context)]
         with build_log.open("w", encoding="utf-8") as out, BuildHeartbeat(tag, build_log):
             try:
                 proc = self.cli.run(
@@ -308,11 +317,16 @@ class DockerExecutionEnvironment(ExecutionEnvironment):
             if not dockerfile.is_file():
                 raise ExecutionEnvironmentError(f"stack Dockerfile not found: {dockerfile}")
             text = dockerfile.read_text(encoding="utf-8")
-            tag = f"ai-benchmark/stack-{stack.id}:{_short_hash(text, _hash_dir(context))}"
+            # A stack that takes a version builds one image per version, so two
+            # versions never share a cached image.
+            name = f"stack-{stack.id}"
+            if stack.framework_version_param:
+                name += f"-{stack.framework_version}"
+            tag = f"ai-benchmark/{name}:{_short_hash(text, _hash_dir(context))}"
             built = False
             with self._image_lock:
                 if not self._image_exists(tag):
-                    self._build(tag, text, context)
+                    self._build(tag, text, context, stack.build_args)
                     built = True
             return ImageInfo(
                 stack_id=stack.id, reference=tag, digest=self._image_id(tag), built_locally=built

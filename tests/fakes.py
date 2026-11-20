@@ -152,6 +152,8 @@ class FakeEnvironment(ExecutionEnvironment):
         self.probe_results = probe_results or {}
         self.probe_raises = probe_raises or {}
         self.calls: list[tuple[str, Any]] = []
+        # Environment passed to each exec, keyed by the command's last element.
+        self.exec_env: dict[str, dict[str, str]] = {}
         self.destroyed: list[str] = []
 
     def _maybe_fail(self, step: str) -> None:
@@ -202,6 +204,8 @@ class FakeEnvironment(ExecutionEnvironment):
     ) -> CommandResult:
         cmd = list(command)
         self.calls.append(("exec", cmd))
+        if cmd:
+            self.exec_env[cmd[-1]] = dict(env or {})
         raised = self.probe_raises.get(cmd[-1])
         if raised is not None:
             raise raised

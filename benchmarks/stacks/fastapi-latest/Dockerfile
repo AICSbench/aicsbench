@@ -7,6 +7,9 @@ RUN apt-get update -qq \
 
 COPY requirements.txt /opt/stack/requirements.txt
 RUN pip install --no-cache-dir -r /opt/stack/requirements.txt
+# The framework version is chosen per run (stack framework_version_param).
+ARG FRAMEWORK_VERSION
+RUN pip install --no-cache-dir "fastapi==${FRAMEWORK_VERSION}"
 
 ENV PIP_USER=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \

@@ -73,6 +73,9 @@ log = logging.getLogger(__name__)
 TrialCallback = Callable[[TrialResult], None]
 
 _VERSION_PROBE_TIMEOUT_SECONDS = 30
+# Start of the note recorded in a trial's error when the installed framework is not
+# the selected version; the site marks such trials as "version changed during trial".
+VERSION_CHANGED_NOTE = "version changed during trial"
 
 
 class PreflightIssue(BaseModel):
@@ -347,7 +350,7 @@ class BenchmarkOrchestrator:
                 resolved_model=trial.agent.model,
             ),
             environment=EnvironmentRecord(
-                stack=stack.id,
+                stack=stack.ref,
                 language=stack.language,
                 language_version=stack.language_version,
                 framework=stack.framework,
@@ -408,6 +411,7 @@ class BenchmarkOrchestrator:
                     cmd,
                     timeout_seconds=plan.timeouts.setup_seconds,
                     workdir=stack.workdir,
+                    env=stack.build_args,
                     stdout_path=log_dir / f"setup-{i}.stdout.log",
                     stderr_path=log_dir / f"setup-{i}.stderr.log",
                 )
@@ -492,6 +496,7 @@ class BenchmarkOrchestrator:
                     f"{original_prompt}\n\nYour previous implementation failed the acceptance "
                     f"tests. Repair the existing workspace. Test failures:\n{feedback}"
                 )
+            self._check_selected_version(trial, stack, result)
 
         except (ExecutionEnvironmentError, ConfigurationError, AgentExecutionError) as exc:
             log.error("trial %s failed: %s", trial.trial_id, exc)
@@ -661,6 +666,27 @@ class BenchmarkOrchestrator:
                 name,
                 why,
             )
+
+    def _check_selected_version(
+        self, trial: PlannedTrial, stack: StackSpec, result: TrialResult
+    ) -> None:
+        """Warn when the installed framework is not the selected version.
+
+        Only stacks that take a version install an exact one. The agent may have
+        changed it on purpose, so the trial keeps its status; the note goes in
+        ``error`` so reports can mark the trial.
+        """
+        installed = result.environment.installed_versions.get("framework")
+        if not stack.framework_version_param or installed is None:
+            return
+        if installed == stack.framework_version:
+            return
+        note = (
+            f"{VERSION_CHANGED_NOTE}: {stack.framework} {installed} is installed, "
+            f"{stack.framework_version} was selected"
+        )
+        log.warning("trial %s: %s", trial.trial_id, note)
+        result.error = "; ".join(filter(None, [result.error, note]))
 
     def run_acceptance_tests(
         self,

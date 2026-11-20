@@ -2,13 +2,19 @@ id: laravel13-boost
 language: php
 language_version: "8.5.12"
 framework: laravel
-framework_version: "13"
-description: PHP 8.5.12, Laravel 13, and Laravel Boost, backed by MySQL.
+framework_version: "13.43.0"
+description: PHP 8.5.12, Laravel 13.43.0, and Laravel Boost 2.10.4, backed by MySQL.
+# Pinned to what the earlier unpinned setup (`composer create-project laravel/laravel
+# ^13.0`, then `composer require laravel/boost`) resolved on 2026-11-20, read with the
+# task 7 probes in a local Docker build of this stack: starter v13.11.0,
+# laravel/framework 13.43.0, laravel/boost v2.10.4. The starter requires
+# laravel/framework ^13.17, so a selected version must be 13.17.0 or later.
+framework_version_param: true
 dockerfile: laravel13-boost/Dockerfile
 build_context: laravel13-boost/
 workdir: /workspace
 environment_notes: |
-  - The Laravel 13 starter project and Laravel Boost are installed before you begin.
+  - The Laravel starter project and Laravel Boost are installed before you begin.
     Use the Laravel Boost guidance and MCP tools available to your agent.
   - MySQL 8.4 is running at host "mysql", port 3306. Its settings are in the
     DB_CONNECTION, DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME and DB_PASSWORD
@@ -25,7 +31,7 @@ setup_commands:
       set -e
       for attempt in 1 2 3; do
         rm -rf /tmp/laravel-starter
-        if composer create-project laravel/laravel /tmp/laravel-starter ^13.0 --no-interaction --prefer-dist --no-progress; then
+        if composer create-project laravel/laravel /tmp/laravel-starter 13.11.0 --no-interaction --prefer-dist --no-progress; then
           cp -a /tmp/laravel-starter/. /workspace/
           exit 0
         fi
@@ -37,7 +43,8 @@ setup_commands:
     - |
       set -e
       for attempt in 1 2 3; do
-        if composer require laravel/boost --dev --no-interaction --no-progress; then
+        if composer require "laravel/framework:$FRAMEWORK_VERSION" --no-interaction --no-progress \
+          && composer require laravel/boost:2.10.4 --dev --no-interaction --no-progress; then
           exit 0
         fi
         sleep "$((attempt * 3))"

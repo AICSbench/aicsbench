@@ -11,9 +11,9 @@ from pydantic import BaseModel, ValidationError
 
 from ai_benchmark.config.experiment import ExperimentConfig
 from ai_benchmark.config.settings import PlatformSettings
-from ai_benchmark.config.stack import StackSpec
+from ai_benchmark.config.stack import StackSpec, split_stack_ref
 from ai_benchmark.config.task import BenchmarkSpec
-from ai_benchmark.errors import ConfigurationError
+from ai_benchmark.errors import ConfigurationError, StackSelectionError
 
 M = TypeVar("M", bound=BaseModel)
 
@@ -114,8 +114,17 @@ class SpecCatalog:
             raise ConfigurationError(f"unknown task '{task_id}' (known: {known})") from None
 
     def get_stack(self, stack_id: str) -> StackSpec:
+        """The stack for ``id`` or ``id@version``, with that framework version selected."""
         try:
-            return self.stacks()[stack_id]
+            base_id, version = split_stack_ref(stack_id)
+        except ValueError as exc:
+            raise StackSelectionError(str(exc)) from None
+        try:
+            stack = self.stacks()[base_id]
         except KeyError:
             known = ", ".join(self.stacks()) or "none"
-            raise ConfigurationError(f"unknown stack '{stack_id}' (known: {known})") from None
+            raise ConfigurationError(f"unknown stack '{base_id}' (known: {known})") from None
+        try:
+            return stack.with_version(version)
+        except ValueError as exc:
+            raise StackSelectionError(str(exc)) from None
