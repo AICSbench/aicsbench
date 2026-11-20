@@ -3,7 +3,7 @@ requires = ["hatchling>=1.21"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ai-benchmark"
+name = "aicsbench"
 version = "0.1.0"
 description = "Open-source platform for benchmarking AI coding agents across languages and frameworks."
 readme = "README.md"

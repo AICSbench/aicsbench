@@ -28,6 +28,17 @@ Agents run inside each stack's container and authenticate with either a
 subscription (default) or an API key. See
 [docs/agent-execution.md](docs/agent-execution.md).
 
+## Install from PyPI
+
+```bash
+pip install aicsbench
+```
+
+If you installed from git before the rename, uninstall the old distribution
+first (`pip uninstall ai-benchmark`) — both distributions own the same
+`ai_benchmark` package and `aicsbench` command, so uninstalling the old one
+after the new install would delete the new files.
+
 ## CLI
 
 ```bash
