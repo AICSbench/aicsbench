@@ -330,6 +330,37 @@ def test_colliding_suffixed_slugs_fail_and_write_nothing(tmp_path: Path) -> None
     assert [file.name for file in out.iterdir()] == ["keep.txt"]
 
 
+@pytest.mark.parametrize("relative", ["submissions", "submissions/out", "."])
+def test_out_may_not_hold_the_bundles(fixture_data: Path, relative: str) -> None:
+    from ai_benchmark.site.export import SiteExportError
+
+    with pytest.raises(SiteExportError):
+        run_export(fixture_data, fixture_data / relative)
+    assert len(trials_of(fixture_data)) == 5
+
+
+def test_leaderboard_columns_are_the_same_on_every_stack(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    write_bundle(data, [make_trial("run-a", 1, stack="fastapi")], verified=True)
+    write_bundle(
+        data,
+        [make_trial("run-b", 1, task="url-shortener-api", version="1", stack="laravel")],
+        verified=True,
+    )
+    out = tmp_path / "out"
+    run_export(data, out)
+    sections = pages_of(out)["/leaderboard/"]["sections"]
+    for section in sections:
+        matrix = section["matrix"]
+        assert [(c["task"], c["task_version"]) for c in matrix["columns"]] == [
+            ("task-management-api", "2"),
+            ("url-shortener-api", "1"),
+        ]
+        assert [(r["overall"]["covered"], r["overall"]["complete"]) for r in matrix["rows"]] == [
+            (1, False)
+        ]
+
+
 def test_data_commit_only_for_a_repository_root(fixture_data: Path, tmp_path: Path) -> None:
     # The committed fixture covers a plain folder inside this repository.
     assert load(EXPORT, "export.json")["data_commit"] is None  # type: ignore[index]
@@ -386,6 +417,13 @@ def test_compare_matrix_columns_equal_compare_trials_and_rank_incomplete_last() 
     assert x.cells[2] is None
     assert (y.overall.complete, y.overall.covered, y.overall.success_rate) == (False, 1, 1.0)
     assert y.cells[1] is None
+
+
+def test_compare_matrix_counts_each_task_version_once() -> None:
+    trials = _matrix_trials()
+    once = compare_matrix(trials, ComparisonDimension.HARNESS_MODEL, ["a", "b"])
+    twice = compare_matrix(trials, ComparisonDimension.HARNESS_MODEL, ["a", "a@2", "b", "a"])
+    assert twice == once
 
 
 def test_compare_matrix_applies_filters_and_pins_versions() -> None:

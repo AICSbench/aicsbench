@@ -246,12 +246,16 @@ def compare_matrix(
     dimensions = tuple(rows) if not isinstance(rows, ComparisonDimension) else (rows,)
     selected = [trial for trial in trials if filters is None or filters.matches(trial)]
     columns: list[MatrixColumn] = []
+    seen: set[tuple[str, str | None]] = set()
     for entry in tasks:
         task_id, _, pinned = entry.partition("@")
         of_task = [trial for trial in selected if trial.task_id == task_id]
         version = pinned or max(
             (trial.task_version for trial in of_task), key=version_key, default=None
         )
+        if (task_id, version) in seen:
+            continue  # Each task version counts once in the overall.
+        seen.add((task_id, version))
         column_trials = [trial for trial in of_task if trial.task_version == version]
         refused: str | None = None
         column_rows: list[ComparisonRow] = []

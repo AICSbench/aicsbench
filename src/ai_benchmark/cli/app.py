@@ -601,7 +601,7 @@ def compare(
         dimensions = _dimensions(by)
         if columns:
             matrix = compare_matrix(
-                list(store.iter_trials()), dimensions, columns, filters, min_trials
+                list(store.iter_trials(filters)), dimensions, columns, filters, min_trials
             )
             _print_matrix(matrix, dimensions)
             return

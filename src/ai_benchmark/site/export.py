@@ -84,8 +84,9 @@ def export_site(
     data_dir, out_dir = data_dir.resolve(), out_dir.resolve()
     if not (data_dir / "submissions").is_dir():
         raise SiteExportError(f"no submissions/ folder in {data_dir}")
-    if out_dir == data_dir or out_dir in data_dir.parents:
-        raise SiteExportError(f"--out {out_dir} would delete the data folder {data_dir}")
+    submissions = data_dir / "submissions"
+    if out_dir == data_dir or out_dir in data_dir.parents or out_dir.is_relative_to(submissions):
+        raise SiteExportError(f"--out {out_dir} would delete bundles in the data folder {data_dir}")
 
     bundles, skipped = load_bundles(data_dir, catalog)
     specs = catalog.tasks()

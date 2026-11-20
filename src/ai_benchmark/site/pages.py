@@ -172,19 +172,11 @@ def leaderboard_sections(data: SiteData, task_path: Callable[[str], str]) -> lis
         current = newest.get(trial.task_id)
         if current is None or version_key(trial.task_version) > version_key(current):
             newest[trial.task_id] = trial.task_version
+    # Every stack gets the same columns: each task at its newest verified
+    # version. A task without runs on a stack leaves its rows incomplete there.
+    tasks = [f"{task}@{version}" for task, version in sorted(newest.items())]
     result = []
     for stack in sorted({trial.environment.stack for trial in verified}):
-        # Every column is pinned to the task's newest verified version, the same
-        # on every stack; a task only gets a column where that version has runs.
-        tasks = sorted(
-            {
-                f"{trial.task_id}@{trial.task_version}"
-                for trial in verified
-                if trial.environment.stack == stack and trial.task_version == newest[trial.task_id]
-            }
-        )
-        if not tasks:
-            continue
         matrix = compare_matrix(
             verified,
             ComparisonDimension.HARNESS_MODEL,
