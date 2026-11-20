@@ -301,6 +301,39 @@ def test_version_change_is_recorded_when_acceptance_setup_fails(
     )
 
 
+def test_repair_that_fails_before_its_probes_leaves_the_version_unchecked(
+    env_settings: PlatformSettings,
+) -> None:
+    class FailingRepairAdapter(FakeAdapter):
+        name = "failing-repair"
+
+        def run(self, task: Any, runner: Any) -> Any:
+            if "previous implementation failed" in task.prompt:
+                raise ExecutionEnvironmentError("container died during repair")
+            return super().run(task, runner)
+
+    env = FakeEnvironment(
+        junit=JUNIT_ONE_FAIL, probe_results={EXPRESS_FRAMEWORK_PROBE: probe_result("5.2.1")}
+    )
+    env.tester_exit = 1
+    o = build(env_settings, env)
+    o.registry.register(FailingRepairAdapter)
+    o.run(
+        experiment(
+            stacks=["express-latest@5.2.1"],
+            max_repairs=1,
+            agents=[AgentSelection(agent="failing-repair", model="m1")],
+        ),
+        run_id="r-repair-unprobed",
+    )
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-repair-unprobed")))
+    assert r.status is TrialStatus.INFRA_ERROR
+    assert r.error == "container died during repair"
+    # The first attempt's probe saw 5.2.1, but the final attempt was never probed.
+    assert r.environment.installed_versions == {}
+    assert r.environment.framework_version_changed is None
+
+
 def test_selected_version_without_framework_probe_output_is_not_checked(
     env_settings: PlatformSettings,
 ) -> None:

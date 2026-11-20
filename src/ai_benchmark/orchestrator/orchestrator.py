@@ -446,6 +446,9 @@ class BenchmarkOrchestrator:
                     # The previous attempt's work is committed; drop only what its
                     # acceptance run left behind before the agent repairs it.
                     discard_untracked(runner, stack.workdir)
+                    # The previous probes describe the previous attempt; if this one
+                    # fails before its own probes, nothing was observed for it.
+                    result.environment.installed_versions = {}
                 agent_task = AgentTask(
                     trial_id=trial.trial_id,
                     prompt=prompt,
