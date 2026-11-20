@@ -51,6 +51,14 @@ from ai_benchmark.models.metrics import Metric, TokenUsage, UsageMetrics
 
 _OPTIONS = {"api_key_env"}
 
+_OPENCODE_EFFORTS = ("low", "medium", "high")
+"""Reasoning efforts the generated config declares for an endpoint model.
+
+Matches OpenCode's own variant set for ``@ai-sdk/openai-compatible`` models
+(``reasoningEffort`` request options); an effort outside this set is rejected
+before the trial starts rather than silently having no effect.
+"""
+
 OPENCODE_PROVIDER_ID = "bench"
 """Internal provider ID the generated config registers for a custom endpoint.
 
@@ -169,6 +177,14 @@ class OpenCodeAdapter(CliAgentAdapter):
                 f"'{endpoint.provider}/<model>' to run through the "
                 f"'{endpoint.provider}' endpoint"
             )
+        if task.reasoning_effort and task.reasoning_effort not in _OPENCODE_EFFORTS:
+            # A variant the generated config does not declare is dropped by
+            # OpenCode's request builder: the requested effort would silently
+            # have no effect, so the trial must not start.
+            raise ConfigurationError(
+                f"opencode supports reasoning efforts {', '.join(_OPENCODE_EFFORTS)} "
+                f"for a custom endpoint, not {task.reasoning_effort!r}"
+            )
         entry: dict[str, Any] = {
             "npm": "@ai-sdk/openai-compatible",
             "name": endpoint.provider,
@@ -178,8 +194,17 @@ class OpenCodeAdapter(CliAgentAdapter):
             },
             # Models must be declared for a custom provider; the command's
             # model ID is rewritten to "<internal>/<model>", so the entry key
-            # drops the requested provider prefix.
-            "models": {model: {}},
+            # drops the requested provider prefix. A config-defined model
+            # defaults to reasoning=false and no variants, which would leave
+            # --variant with nothing to apply, so both are declared.
+            "models": {
+                model: {
+                    "reasoning": True,
+                    "variants": {
+                        effort: {"reasoningEffort": effort} for effort in _OPENCODE_EFFORTS
+                    },
+                }
+            },
         }
         return {"$schema": "opencode.ai/config.json", "provider": {OPENCODE_PROVIDER_ID: entry}}
 

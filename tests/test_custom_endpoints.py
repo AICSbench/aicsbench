@@ -205,6 +205,21 @@ def test_endpoint_rejects_percent_encoded_plain_http_hosts(base_url: str) -> Non
         EndpointConfig(provider="openrouter", base_url=base_url, api_key_env=KEY_ENV)
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://8\u30028\u30028\u30028",  # U+3002 IDEOGRAPHIC FULL STOP
+        "http://8\uff0e8\uff0e8\uff0e8",  # U+FF0E FULLWIDTH FULL STOP
+        "http://8\uff618\uff618\uff618\uff618",  # U+FF61 HALFWIDTH IDEOGRAPHIC FULL STOP
+    ],
+)
+def test_endpoint_rejects_unicode_dot_plain_http_hosts(base_url: str) -> None:
+    # WHATWG host parsing maps these Unicode dot separators to '.', so the
+    # client connects to 8.8.8.8, not to a bare Docker service name.
+    with pytest.raises(ValueError, match="plain http"):
+        EndpointConfig(provider="openrouter", base_url=base_url, api_key_env=KEY_ENV)
+
+
 def test_endpoint_rejects_an_empty_api_key_env_name() -> None:
     with pytest.raises(ValueError, match="environment variable name"):
         EndpointConfig(
@@ -461,7 +476,46 @@ def test_opencode_provider_config() -> None:
     assert entry["options"]["baseURL"] == "https://openrouter.ai/api/v1"
     # The key is OpenCode's {env:VAR} substitution: a name, never a value.
     assert entry["options"]["apiKey"] == f"{{env:{KEY_ENV}}}"
-    assert entry["models"] == {"openai/gpt-6-luna": {}}
+    assert entry["models"] == {
+        "openai/gpt-6-luna": {
+            "reasoning": True,
+            "variants": {
+                effort: {"reasoningEffort": effort} for effort in ("low", "medium", "high")
+            },
+        }
+    }
+
+
+@pytest.mark.parametrize("effort", ["low", "medium", "high"])
+def test_opencode_endpoint_accepts_declared_reasoning_efforts(effort: str, tmp_path: Path) -> None:
+    adapter = OpenCodeAdapter()
+    task = adapter_task(
+        Path("/tmp"),
+        model="openrouter/openai/gpt-6-luna",
+        endpoint=ENDPOINT,
+        auth_mode=AuthMode.API_KEY,
+        reasoning_effort=effort,
+    )
+    config = adapter.provider_config(task)
+    # The variant is declared in the generated config, so --variant applies.
+    assert (
+        effort
+        in config["provider"][OPENCODE_PROVIDER_ID]["models"]["openai/gpt-6-luna"]["variants"]
+    )
+
+
+@pytest.mark.parametrize("effort", ["max", "xhigh", "bogus"])
+def test_opencode_endpoint_rejects_undeclared_reasoning_efforts(effort: str) -> None:
+    adapter = OpenCodeAdapter()
+    task = adapter_task(
+        Path("/tmp"),
+        model="openrouter/openai/gpt-6-luna",
+        endpoint=ENDPOINT,
+        auth_mode=AuthMode.API_KEY,
+        reasoning_effort=effort,
+    )
+    with pytest.raises(ConfigurationError, match=effort):
+        adapter.provider_config(task)
 
 
 class RecordingRunner:
@@ -578,7 +632,14 @@ def test_opencode_run_carries_the_provider_config_inline(tmp_path: Path) -> None
     entry = config["provider"][OPENCODE_PROVIDER_ID]
     assert entry["options"]["baseURL"] == ENDPOINT.base_url
     assert entry["options"]["apiKey"] == f"{{env:{KEY_ENV}}}"
-    assert entry["models"] == {"openai/gpt-6-luna": {}}
+    assert entry["models"] == {
+        "openai/gpt-6-luna": {
+            "reasoning": True,
+            "variants": {
+                effort: {"reasoningEffort": effort} for effort in ("low", "medium", "high")
+            },
+        }
+    }
     assert MARKER not in agent["env"][OPENCODE_CONFIG_CONTENT]
 
 

@@ -90,7 +90,7 @@ class EndpointConfig(StrictModel):
             )
         else:
             hex_host = False
-        numeric_host = host.isdigit() or hex_host
+        numeric_host = host.isascii() and (host.isdigit() or hex_host)
         if numeric_host:
             # WHATWG URL parsing (what HTTP clients use) reads dotless integer
             # hosts as IPv4: decimal ('16909060'), hexadecimal ('0x01020304'),
@@ -119,8 +119,11 @@ class EndpointConfig(StrictModel):
             )
         # A bare host is a Docker service name. A host containing percent
         # escapes is not one: WHATWG URL parsing percent-decodes the host
-        # before connecting, so '%38%2e%38...' is really '8.8.8.8'.
-        if (host == "localhost" or "." not in host) and "%" not in host:
+        # before connecting, so '%38%2e%38...' is really '8.8.8.8'. A host
+        # with non-ASCII characters is not one either: WHATWG host parsing
+        # maps Unicode dot separators (U+3002, U+FF0E, U+FF61) to '.', so
+        # '8。8。8。8' is really '8.8.8.8'.
+        if (host == "localhost" or "." not in host) and "%" not in host and host.isascii():
             return v
         raise ValueError(
             f"plain http:// is only allowed for localhost, a private IP or a Docker "
