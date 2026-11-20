@@ -71,7 +71,7 @@ class FakeGitHub:
         assert self.pushed_branch is not None
         shutil.copytree(self.pushed_branch, repo_dir, dirs_exist_ok=True)
 
-    def changed_paths(self, repo_dir: Path) -> list[str]:
+    def changed_paths(self, repo_dir: Path, base_repo: str) -> list[str]:
         assert self.pushed_branch is not None
         return sorted(
             p.relative_to(self.pushed_branch).as_posix()
@@ -317,8 +317,15 @@ def test_pr_mode_resumes_branch_pushed_by_an_earlier_submit(
     assert submit(env, "--out", str(earlier)).exit_code == 0
     fake = env["fake"]
     fake.pushed_branch = earlier
+    # The local run changes after the push; the PR body describes the pushed files.
+    path = env["results"] / RUN_ID / "trials" / "trial-001.json"
+    trial = TrialResult.model_validate_json(path.read_text())
+    agent = trial.agent.model_copy(update={"resolved_model": "changed-later"})
+    path.write_text(trial.model_copy(update={"agent": agent}).model_dump_json())
     result = submit(env)
     assert result.exit_code == 0, result.output
+    assert "gpt-6-luna" in fake.body
+    assert "changed-later" not in fake.body
     assert "https://github.com/aicsbench/data/pull/1" in result.output
     title = f"data: add {TASK_ID} run {RUN_ID}"
     assert fake.calls == [

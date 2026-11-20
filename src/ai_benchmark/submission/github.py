@@ -63,18 +63,29 @@ class GitHub:
         return bool(out)
 
     def checkout_remote_branch(self, repo_dir: Path, branch: str) -> None:
-        """Fetch ``branch`` from ``origin`` with its parent and check it out."""
+        """Fetch ``branch`` from ``origin`` with its full history and check it out."""
         self._run(
-            ["git", "fetch", "--quiet", "--depth", "2", "origin", f"{branch}:{branch}"],
+            ["git", "fetch", "--quiet", "--unshallow", "origin", f"+{branch}:{branch}"],
             cwd=repo_dir,
         )
         self._run(["git", "checkout", "--quiet", branch], cwd=repo_dir)
 
-    def changed_paths(self, repo_dir: Path) -> list[str]:
-        """Paths the checked-out branch's last commit changes."""
+    def changed_paths(self, repo_dir: Path, base_repo: str) -> list[str]:
+        """Every path the checked-out branch changes in a PR to ``base_repo``.
+
+        Like GitHub's PR diff: against the merge base with the base repository's
+        default branch, so earlier commits on the branch count too.
+        """
+        self._run(
+            ["git", "fetch", "--quiet", self.repo_url(base_repo), "+HEAD:refs/aicsbench/base"],
+            cwd=repo_dir,
+        )
         return self._run(
-            ["git", "diff", "--name-only", "HEAD~1", "HEAD"], cwd=repo_dir
+            ["git", "diff", "--name-only", "refs/aicsbench/base...HEAD"], cwd=repo_dir
         ).splitlines()
+
+    def repo_url(self, repo: str) -> str:
+        return f"https://github.com/{repo}.git"
 
     def commit(self, repo_dir: Path, message: str, author_name: str, author_email: str) -> None:
         """Commit everything in ``repo_dir`` with the submitter as author and committer."""

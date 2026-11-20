@@ -8,6 +8,7 @@ bundle holds sanitized copies.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import gzip
 import hashlib
 import io
@@ -429,7 +430,7 @@ def _resume(
     github.checkout_remote_branch(fork_dir, branch)
     pushed = fork_dir / "submissions" / bundle.task_id / bundle.run_id
     prefix = f"submissions/{bundle.task_id}/{bundle.run_id}/"
-    others = [p for p in github.changed_paths(fork_dir) if not p.startswith(prefix)]
+    others = [p for p in github.changed_paths(fork_dir, data_repo) if not p.startswith(prefix)]
     if not pushed.is_dir() or others:
         raise SubmissionError(
             f"branch {branch} already exists on your fork and is not an earlier submission "
@@ -439,6 +440,12 @@ def _resume(
     problems = validate_bundle(pushed, catalog, against=merged if merged.is_dir() else None)
     if problems:
         return None, problems
+    # Summarize what the branch holds, not what this run would build today.
+    pushed_trials = [
+        TrialResult.model_validate_json(file.read_text(encoding="utf-8"))
+        for file in sorted((pushed / "trials").glob("*.json"))
+    ]
+    body = pr_body(dataclasses.replace(bundle, path=pushed, trials=pushed_trials))
     title = pr_title(bundle.task_id, bundle.run_id)
-    url = github.create_pr(data_repo, f"{login}:{branch}", title, pr_body(bundle), fork_dir)
+    url = github.create_pr(data_repo, f"{login}:{branch}", title, body, fork_dir)
     return url, []
