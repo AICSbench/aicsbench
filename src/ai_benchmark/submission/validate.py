@@ -478,7 +478,10 @@ def _report_text_matches(
     matches = scan_text(text)
     if member_name.endswith(".json"):
         try:
-            matches += find_secrets(json.loads(text))
+            # parse_int bypasses Python's integer-digit limit, so an escaped
+            # key such as "access\u005ftoken" still reaches find_secrets even
+            # when the member also carries an oversized integer.
+            matches += find_secrets(json.loads(text, parse_int=str))
         except RecursionError:
             problems.append(
                 Problem("layout", where, "JSON member is nested too deeply to parse")

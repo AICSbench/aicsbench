@@ -674,6 +674,24 @@ def test_log_archive_tolerates_oversized_json_integer(
     assert validate_bundle(bundle, catalog) == []
 
 
+def test_log_archive_scans_json_member_with_oversized_integer(
+    catalog: SpecCatalog, tmp_path: Path
+) -> None:
+    # An escaped key plus an oversized integer must still reach the key scan:
+    # the member parses (parse_int bypasses the digit limit) instead of being
+    # dropped as unparseable.
+    bundle = _log_bundle(catalog, tmp_path)
+    _add_log(
+        bundle,
+        "trial-001",
+        '{"access\\u005ftoken": "sk-live-abcd1234", "n": ' + "9" * 5000 + "}",
+        member="output.json",
+    )
+    problems = validate_bundle(bundle, catalog)
+    assert [p.code for p in problems] == ["secret"]
+    assert "access_token" in problems[0].message
+
+
 def test_log_archive_rejects_member_over_limit(
     catalog: SpecCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

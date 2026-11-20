@@ -112,10 +112,12 @@ def scan_text(text: str) -> list[str]:
         if not stripped.startswith(("{", "[")):
             continue
         try:
-            data = json.loads(stripped)
+            # parse_int bypasses Python's integer-digit limit, so a line with
+            # an oversized integer is still parsed and its keys scanned
+            # instead of being dropped as non-JSON.
+            data = json.loads(stripped, parse_int=str)
         except (ValueError, RecursionError):
-            # ValueError covers JSONDecodeError and the plain ValueError
-            # Python 3.11+ raises for very long integers.
+            # ValueError covers JSONDecodeError and any parse failure.
             continue
         matches.extend(
             f"{where} {path}" if path != "<value>" else where for path in find_secrets(data)
