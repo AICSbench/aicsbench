@@ -179,6 +179,10 @@ keys, all added to `trial_row` itself so CSV/JSONL exports get them too:
 | `language_version_installed` | `environment.installed_versions["language"]` (task 7; the existing `language_version` key stays the version the stack declares) |
 | `framework_version_installed` | `environment.installed_versions["framework"]` (task 7; the existing `framework_version` key stays the version the stack declares) |
 
+In the export, `provider` is `null` for a trial recorded before provider
+tracking (the site shows it as `unknown`), and `endpoint_host` is `null` for a
+direct run.
+
 and these keys added only in the export:
 
 | Key | Source |
@@ -209,8 +213,24 @@ and these keys added only in the export:
 ]}
 ```
 
-- `kind` is one of `home`, `task`, `harness`, `model`, `stack`, `run`,
-  `compare`, `methodology`. One template per kind in `aicsbench/web`.
+- `kind` is one of `home`, `task`, `harness`, `model`, `stack`,
+  `leaderboard`, `run`, `compare`, `methodology`. One template per kind in
+  `aicsbench/web`.
+- `fixed` names every value the section holds fixed: the comparability key
+  (`task`, `task_version`, `tooling_mode`, `auth_mode`, `max_repairs`,
+  `max_parallel`), `suite_sha256`, and the page's "per ..." axes (`stack`,
+  `harness`, `model`; `model` is the model key). On `/leaderboard/` it is only
+  `stack`.
+- `verified_only: true` sections hold verified runs only; `false` sections
+  hold community (unverified) runs only, never both.
+- `/leaderboard/` sections have empty `rows` and a `matrix` instead:
+  `{"columns": [{"task", "task_version", "path", "refused"}], "rows":
+  [{"value", "cells": [Row or null, ...], "overall": {"success_rate",
+  "covered", "columns", "mean_rank", "complete"}}]}`, written from
+  `comparison.compare_matrix`. Other sections have `matrix: null`.
+- `/runs/<run_id>/` pages have no sections; their trial rows are the
+  `data/trials.json` rows with that `run_id`, and `params.bundle` is the
+  bundle's folder in the data repository.
 - `rows` are `dataclasses.asdict(comparison.ComparisonRow)` plus
   `success_rate` (`passed / trials`), in the order `compare_trials` returns
   them. A `null` mean (no timed or costed trials) renders as "unavailable",
@@ -265,5 +285,8 @@ Leaderboard rows use `comparison.compare_trials`, which refuses a
 comparison that leaves another dimension mixed (for example comparing stacks
 across several harness + model pairs). Pages therefore split each leaderboard
 by the dimensions it must hold fixed, as the "per ..." wording above says.
+A harness + model leaderboard ranks whole packages, so its rows may use
+different providers (Claude Code + Opus on Anthropic, Codex + GPT on OpenAI);
+each row holds one recorded provider (task 9 item 5).
 Groups with fewer than 3 trials are shown but marked low confidence, exactly
 like the CLI.

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import shutil
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any, Optional
 
@@ -17,7 +19,7 @@ from rich.table import Column, Table
 
 from ai_benchmark import __version__
 from ai_benchmark.agents.registry import AgentRegistry, default_registry
-from ai_benchmark.comparison import compare_trials
+from ai_benchmark.comparison import ComparisonMatrix, compare_matrix, compare_trials
 from ai_benchmark.config.experiment import AgentSelection, ExperimentConfig, ToolingConfig
 from ai_benchmark.config.loader import (
     SpecCatalog,
@@ -34,8 +36,9 @@ from ai_benchmark.errors import BenchmarkError, ConfigurationError
 from ai_benchmark.logging_config import configure_logging
 from ai_benchmark.models.enums import AuthMode, ComparisonDimension, ToolingMode, TrialStatus
 from ai_benchmark.models.results import TrialResult
-from ai_benchmark.orchestrator.orchestrator import BenchmarkOrchestrator
+from ai_benchmark.orchestrator.orchestrator import BenchmarkOrchestrator, _platform_commit
 from ai_benchmark.reporting import export_trials, render_report
+from ai_benchmark.site.export import export_site
 from ai_benchmark.storage.base import ResultFilter
 from ai_benchmark.storage.json_store import JsonResultStore
 from ai_benchmark.submission.github import GitHub
@@ -678,12 +681,27 @@ def compare(
     model: Annotated[Optional[str], typer.Option()] = None,
     stack: Annotated[Optional[str], typer.Option()] = None,
     task: Annotated[Optional[str], typer.Option()] = None,
+    tasks_opt: Annotated[
+        Optional[str],
+        typer.Option(
+            "--tasks",
+            "--matrix",
+            help="Comma-separated tasks, each optionally <id>@<version>: one column per "
+            "task (newest version by default), rows from --by, plus an overall.",
+        ),
+    ] = None,
     mode: Annotated[Optional[ToolingMode], typer.Option("--mode")] = None,
     auth: Annotated[Optional[AuthMode], typer.Option("--auth")] = None,
     min_trials: Annotated[int, typer.Option("--min-trials", min=1)] = 3,
 ) -> None:
     """Compare success rates and passing agent times from stored trials."""
     store = JsonResultStore(_ctx(ctx).settings.results_dir)
+    columns = _split(tasks_opt)
+    if len(columns) == 1 and "@" not in columns[0] and task is None:
+        task = columns[0]
+        columns = []
+    if columns and task is not None:
+        raise _fail("use either --task or --tasks", 2)
     filters = ResultFilter(
         run_id=run_id,
         agent=agent,
@@ -695,6 +713,18 @@ def compare(
     )
     try:
         dimensions = _dimensions(by)
+        if columns:
+            trials = list(store.iter_trials(filters))
+            # Each column must hold one acceptance suite. Runs without a recorded
+            # hash (before task 2) pool with each other, as single-task compare
+            # does, but never with a run whose hash is known.
+            # Manifests are read only for runs in the selected columns.
+            suite_of = functools.cache(lambda run: store.load_manifest(run).acceptance_suite_sha256)
+            matrix = compare_matrix(
+                trials, dimensions, columns, filters, min_trials, suite_of=suite_of
+            )
+            _print_matrix(matrix, dimensions)
+            return
         rows = compare_trials(list(store.iter_trials(filters)), dimensions, min_trials)
     except (BenchmarkError, ValueError) as exc:
         raise _fail(str(exc)) from None
@@ -723,6 +753,39 @@ def compare(
             f"${row.mean_cost_usd:.4f}" if row.mean_cost_usd is not None else "n/a",
             str(row.cost_samples),
             "low" if row.low_confidence else "ok",
+        )
+    console.print(table)
+
+
+def _print_matrix(matrix: ComparisonMatrix, dimensions: list[ComparisonDimension]) -> None:
+    if not matrix.rows and all(column.refused is None for column in matrix.columns):
+        console.print("No results match.")
+        return
+    headers = [
+        f"{column.task}@{column.task_version or '-'}"
+        + (f"\nrefused: {column.refused}" if column.refused else "")
+        for column in matrix.columns
+    ]
+    table = Table(" + ".join(d.value for d in dimensions), *headers, "overall", "mean rank")
+    for row in matrix.rows:
+        cells = []
+        for cell, column in zip(row.cells, matrix.columns, strict=True):
+            if column.refused is not None:
+                cells.append("refused")
+            elif cell is None:
+                cells.append("(no data)")
+            else:
+                secs = f"{cell.mean_seconds:.0f}s" if cell.mean_seconds is not None else "n/a"
+                low = " (low)" if cell.low_confidence else ""
+                cells.append(f"{cell.passed / cell.trials:.0%} · {secs}{low}")
+        overall = row.overall
+        rate = f"{overall.success_rate:.0%}" if overall.success_rate is not None else "n/a"
+        table.add_row(
+            row.value,
+            *cells,
+            f"{rate} · {overall.covered}/{overall.columns}"
+            + ("" if overall.complete else " incomplete"),
+            f"{overall.mean_rank:.2f}" if overall.mean_rank is not None else "n/a",
         )
     console.print(table)
 
@@ -803,6 +866,41 @@ def dashboard(
         pass
     except OSError as exc:
         raise _fail(str(exc)) from None
+
+
+site_app = typer.Typer(help="Build the public website's data (aicsbench/web renders it).")
+app.add_typer(site_app, name="site")
+
+
+@site_app.command("export")
+def site_export(
+    ctx: typer.Context,
+    data: Annotated[Path, typer.Option("--data", help="A checkout of aicsbench/data.")],
+    out: Annotated[Path, typer.Option("--out", help="Output folder; emptied first.")],
+    base_url: Annotated[
+        str, typer.Option("--base-url", help="Absolute URL the site is served from.")
+    ],
+) -> None:
+    """Write the site export (docs/phase-5/schemas.md#site-export)."""
+    try:
+        summary = export_site(
+            data,
+            out,
+            base_url,
+            _ctx(ctx).catalog,
+            built_at=datetime.now(timezone.utc),
+            platform_git_commit=_platform_commit(),
+        )
+    except BenchmarkError as exc:
+        raise _fail(str(exc)) from None
+    for skipped in summary.skipped:
+        err_console.print(f"[yellow]warning[/yellow] skipped invalid bundle {skipped.path}")
+        for problem in skipped.problems:
+            err_console.print(f"  {problem}")
+    console.print(
+        f"Exported {summary.runs} run(s), {summary.trials} trial(s), {summary.pages} page(s) "
+        f"to {out}"
+    )
 
 
 def main() -> None:
