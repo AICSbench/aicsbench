@@ -9,6 +9,9 @@ workdir: /workspace
 environment_notes: |
   - PostgreSQL 16 is running at host "postgres", port 5432. Its connection URL is in
     the DATABASE_URL environment variable (postgresql://user:password@host:port/db).
+version_probes:
+  language: [sh, -lc, "node -p process.versions.node"]
+  framework: [sh, -lc, "node -p \"require('express/package.json').version\""]
 env:
   DATABASE_URL: postgresql://bench:bench@postgres:5432/bench
 services:

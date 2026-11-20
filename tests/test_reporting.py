@@ -35,11 +35,13 @@ def test_flat_export_keeps_unavailable_metrics_null() -> None:
     assert row["input_tokens"] is None
     assert (row["harness"], row["harness_version"]) == ("codex", "0.167.2")
     assert (row["requested_model"], row["reasoning_effort"]) == ("gpt-6-luna", "high")
-    assert list(row)[-6:] == [
+    assert list(row)[-8:] == [
         "harness",
         "harness_version",
         "requested_model",
         "reasoning_effort",
+        "language_version_installed",
+        "framework_version_installed",
         "provider",
         "endpoint_host",
     ]
@@ -65,6 +67,37 @@ def test_export_reads_trials_saved_before_harness_columns(tmp_path: Path) -> Non
     assert row["harness_version"] == ""
     assert row["requested_model"] == ""
     assert row["reasoning_effort"] == ""
+
+
+def test_export_adds_installed_version_columns() -> None:
+    item = trial("r1", "t1", "codex", TrialStatus.PASSED)
+    item.environment.installed_versions = {"language": "3.12.7", "framework": "0.115.2"}
+    row = json.loads(export_trials([item], "jsonl"))
+    assert row["language_version_installed"] == "3.12.7"
+    assert row["framework_version_installed"] == "0.115.2"
+    assert list(row)[-2:] == ["language_version_installed", "framework_version_installed"]
+
+
+def test_export_reads_trials_saved_before_installed_versions(tmp_path: Path) -> None:
+    store = JsonResultStore(tmp_path)
+    store.save_manifest(manifest("r1"))
+    payload = trial("r1", "t1", "codex", TrialStatus.PASSED).model_dump(mode="json")
+    payload["environment"].pop("installed_versions")
+    path = tmp_path / "r1" / "trials" / "t1.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    trials = list(store.iter_trials(ResultFilter(run_id="r1")))
+    row = next(csv.DictReader(io.StringIO(export_trials(trials, "csv"))))
+    assert row["language_version"] == "3.12"  # the declared version is unchanged
+    assert row["language_version_installed"] == "" and row["framework_version_installed"] == ""
+
+
+def test_comparability_ignores_installed_versions() -> None:
+    a = trial("r1", "a", "codex", TrialStatus.PASSED)
+    b = trial("r1", "b", "codex", TrialStatus.PASSED)
+    b.environment.installed_versions = {"language": "3.13.1"}
+    assert a.comparability_key() == b.comparability_key()
+    assert len(compare_trials([a, b], ComparisonDimension.STACK)) == 1
 
 
 def test_report_and_export_cli(tmp_path: Path) -> None:

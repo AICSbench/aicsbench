@@ -14,6 +14,9 @@ environment_notes: |
   - Preinstalled Python packages (pinned): fastapi, uvicorn, pydantic, pydantic-settings,
     sqlalchemy, alembic, psycopg (v3), httpx and pytest. pip installs extra packages for
     your user. Commit any extra dependencies to requirements.txt.
+version_probes:
+  language: [sh, -lc, "python -c \"import platform; print(platform.python_version())\""]
+  framework: [sh, -lc, "python -c \"import fastapi; print(fastapi.__version__)\""]
 env:
   DATABASE_URL: postgresql://bench:bench@postgres:5432/bench
 setup_commands: []

@@ -72,6 +72,8 @@ log = logging.getLogger(__name__)
 
 TrialCallback = Callable[[TrialResult], None]
 
+_VERSION_PROBE_TIMEOUT_SECONDS = 30
+
 
 class PreflightIssue(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -456,6 +458,9 @@ class BenchmarkOrchestrator:
                 # creates while being tested (SQLite databases, runtime logs) must
                 # never land in the commit or in the code metrics.
                 self._snapshot_implementation(result, runner, stack)
+                if stack.version_probes:
+                    _phase(trial.trial_id, f"running {len(stack.version_probes)} version probe(s)")
+                    self._record_installed_versions(trial, runner, stack, result)
 
                 _phase(trial.trial_id, f"running acceptance tests after attempt {attempt + 1}")
                 quality, test_logs, tester_ok, feedback = self.run_acceptance_tests(
@@ -611,6 +616,40 @@ class BenchmarkOrchestrator:
         result.metrics.code.files_changed = Metric[int].of(
             change.files_changed, MetricSource.MEASURED
         )
+
+    def _record_installed_versions(
+        self, trial: PlannedTrial, runner: CommandRunner, stack: StackSpec, result: TrialResult
+    ) -> None:
+        """Run the stack's version probes and record what is actually installed.
+
+        Runs after the agent finishes and before the acceptance tests, so the
+        record shows what was tested. Each probe runs in the app container at the
+        stack's ``workdir`` and must print the version on stdout; its first line
+        is recorded. A probe that fails, times out or prints nothing is skipped
+        with a warning; probes never change the trial's status.
+        """
+        result.environment.installed_versions = {}
+        for name, command in stack.version_probes.items():
+            res = runner.run(
+                command, timeout_seconds=_VERSION_PROBE_TIMEOUT_SECONDS, workdir=stack.workdir
+            )
+            lines = res.stdout.strip().splitlines()
+            first_line = lines[0].strip() if lines else ""
+            if res.ok and first_line:
+                result.environment.installed_versions[name] = first_line
+                continue
+            if res.timed_out:
+                why = "timed out"
+            elif not res.ok:
+                why = f"exit code {res.exit_code}"
+            else:
+                why = "no output"
+            log.warning(
+                "trial %s: version probe '%s' failed (%s); version not recorded",
+                trial.trial_id,
+                name,
+                why,
+            )
 
     def run_acceptance_tests(
         self,
