@@ -630,9 +630,18 @@ class BenchmarkOrchestrator:
         """
         result.environment.installed_versions = {}
         for name, command in stack.version_probes.items():
-            res = runner.run(
-                command, timeout_seconds=_VERSION_PROBE_TIMEOUT_SECONDS, workdir=stack.workdir
-            )
+            try:
+                res = runner.run(
+                    command, timeout_seconds=_VERSION_PROBE_TIMEOUT_SECONDS, workdir=stack.workdir
+                )
+            except Exception as exc:  # a broken probe must never fail the trial
+                log.warning(
+                    "trial %s: version probe '%s' failed (%s); version not recorded",
+                    trial.trial_id,
+                    name,
+                    exc,
+                )
+                continue
             lines = res.stdout.strip().splitlines()
             first_line = lines[0].strip() if lines else ""
             if res.ok and first_line:

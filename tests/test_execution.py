@@ -12,6 +12,7 @@ from ai_benchmark.agents import AgentRegistry
 from ai_benchmark.config import AgentSelection, ExperimentConfig, SpecCatalog
 from ai_benchmark.config.settings import PlatformSettings
 from ai_benchmark.environment import CommandResult
+from ai_benchmark.errors import ExecutionEnvironmentError
 from ai_benchmark.models import (
     AuthMode,
     Metric,
@@ -200,6 +201,30 @@ def test_failed_or_empty_version_probe_is_skipped(
     assert any("'framework'" in m and "exit code 3" in m for m in messages)
     assert any("'timed'" in m and "timed out" in m for m in messages)
     assert any("'empty'" in m and "no output" in m for m in messages)
+
+
+def test_raising_version_probe_is_skipped(
+    env_settings: PlatformSettings, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    settings = probe_stack_settings(
+        env_settings,
+        tmp_path,
+        "version_probes:\n"
+        '  language: [sh, -lc, "echo node-22.11.0"]\n'
+        '  framework: [sh, -lc, "echo broken"]\n',
+    )
+    env = FakeEnvironment(
+        probe_results={"echo node-22.11.0": probe_result("22.11.0\n")},
+        probe_raises={"echo broken": ExecutionEnvironmentError("exec failed")},
+    )
+    o = build(settings, env)
+    with caplog.at_level(logging.WARNING):
+        o.run(experiment(stacks=["express"]), run_id="r-probe-raises")
+    [r] = list(o.store.iter_trials(ResultFilter(run_id="r-probe-raises")))
+    assert r.status is TrialStatus.PASSED
+    assert r.environment.installed_versions == {"language": "22.11.0"}
+    messages = [rec.getMessage() for rec in caplog.records if rec.levelno == logging.WARNING]
+    assert any("'framework'" in m and "exec failed" in m for m in messages)
 
 
 def test_failed_tests_mark_trial_failed(env_settings: PlatformSettings) -> None:
