@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from ai_benchmark import reporting
 from ai_benchmark.cli.app import app
 from ai_benchmark.comparison import compare_trials
 from ai_benchmark.models import (
@@ -20,11 +21,25 @@ from ai_benchmark.models import (
     TrialResult,
     TrialStatus,
 )
-from ai_benchmark.pricing import SOURCE, Catalog, ModelPrice, default_catalog
+from ai_benchmark.pricing import SOURCE, Catalog, ModelPrice, default_catalog, load_catalog
 from ai_benchmark.reporting import csv_text, export_trials, render_report
 from ai_benchmark.storage import JsonResultStore, ResultFilter
 
 from .test_storage import manifest, trial
+
+SNAPSHOT_TIME = "2026-11-21T11:37:56Z"
+
+
+@pytest.fixture(scope="module")
+def pricing_snapshot() -> Catalog:
+    # A refresh can change model coverage and prices without changing report behavior.
+    repo = Path(__file__).resolve().parents[1]
+    return load_catalog(repo / "src/ai_benchmark/pricing/openrouter-models-2026-11-21.json")
+
+
+@pytest.fixture(autouse=True)
+def pin_report_prices(monkeypatch: pytest.MonkeyPatch, pricing_snapshot: Catalog) -> None:
+    monkeypatch.setattr(reporting, "default_catalog", lambda: pricing_snapshot)
 
 
 def _priced_trial(model: str, *, input_tokens: int, cached: int, output: int) -> TrialResult:
@@ -183,7 +198,7 @@ def test_cli_estimates_luna_cost_with_partial_coverage(tmp_path: Path) -> None:
     assert rows["priced"]["cost_usd"] is None
     assert (
         rows["priced"]["estimated_api_cost_rate_card"]
-        == "openrouter/openai/gpt-6-luna/base@2026-11-21"
+        == f"openrouter/openai/gpt-6-luna/base@{SNAPSHOT_TIME}"
     )
     assert (
         rows["priced"]["estimated_api_cost_price_source"] == "https://openrouter.ai/api/v1/models"
@@ -238,11 +253,12 @@ def test_report_uses_openrouter_snapshot_rates() -> None:
     assert deepseek_row["estimated_api_cost_model_assumed"] is False
     assert unknown_row["estimated_api_cost_usd"] is None
     assert (
-        glm_row["estimated_api_cost_rate_card"] == "openrouter/z-ai/glm-5.3-flash/base@2026-11-21"
+        glm_row["estimated_api_cost_rate_card"]
+        == f"openrouter/z-ai/glm-5.3-flash/base@{SNAPSHOT_TIME}"
     )
     assert (
         deepseek_row["estimated_api_cost_rate_card"]
-        == "openrouter/deepseek/deepseek-v4.1-flash-1017/base@2026-11-21"
+        == f"openrouter/deepseek/deepseek-v4.1-flash-1017/base@{SNAPSHOT_TIME}"
     )
     assert glm_row["estimated_api_cost_price_source"] == "https://openrouter.ai/api/v1/models"
 
@@ -255,9 +271,9 @@ def test_report_uses_openrouter_snapshot_rates() -> None:
         assert group["estimated_api_cost_rate_card"] == exported["estimated_api_cost_rate_card"]
 
 
-def test_openrouter_snapshot_is_dated_and_keeps_variants_distinct() -> None:
-    catalog = default_catalog()
-    assert (catalog.snapshot_date, catalog.source) == ("2026-11-21", SOURCE)
+def test_openrouter_snapshot_keeps_variants_distinct(pricing_snapshot: Catalog) -> None:
+    catalog = pricing_snapshot
+    assert (catalog.retrieved_at, catalog.source) == (SNAPSHOT_TIME, SOURCE)
     assert len(catalog.models) == 476
     assert {
         "openai/gpt-6-luna",
@@ -282,6 +298,12 @@ def test_openrouter_snapshot_is_dated_and_keeps_variants_distinct() -> None:
     assert base.prompt != dated.prompt
     router = catalog.lookup("openrouter/auto")
     assert router is not None and router.is_priceable is False
+
+
+def test_default_catalog_loads_latest_bundled_snapshot() -> None:
+    directory = Path(__file__).resolve().parents[1] / "src/ai_benchmark/pricing"
+    latest = max(directory.glob("openrouter-models-*.json"))
+    assert default_catalog() == load_catalog(latest)
 
 
 def test_refresh_snapshot_keeps_text_models_and_base_rates() -> None:
@@ -346,8 +368,8 @@ def test_refresh_snapshot_keeps_text_models_and_base_rates() -> None:
         module.build_snapshot({"data": []}, retrieved_at)
 
 
-def test_openrouter_lookup_uses_exact_ids_or_one_bare_id() -> None:
-    catalog = default_catalog()
+def test_openrouter_lookup_uses_exact_ids_or_one_bare_id(pricing_snapshot: Catalog) -> None:
+    catalog = pricing_snapshot
     assert catalog.lookup("gpt-6-luna").model_id == "openai/gpt-6-luna"
     assert catalog.lookup("GPT-6-LUNA").model_id == "openai/gpt-6-luna"
     assert catalog.lookup("gpt-6-luna:batch").model_id == "openai/gpt-6-luna:batch"
@@ -375,7 +397,9 @@ def test_openrouter_estimate_uses_base_rates_not_overrides() -> None:
     luna = _priced_trial("gpt-6-luna", input_tokens=300_000, cached=0, output=1_000)
     row = json.loads(export_trials([luna], "jsonl"))
     assert row["estimated_api_cost_usd"] == pytest.approx(0.0305)
-    assert row["estimated_api_cost_rate_card"] == "openrouter/openai/gpt-6-luna/base@2026-11-21"
+    assert (
+        row["estimated_api_cost_rate_card"] == f"openrouter/openai/gpt-6-luna/base@{SNAPSHOT_TIME}"
+    )
 
     # DeepSeek's weekday peak window would double the input rate; the base rate is fixed.
     deepseek = _priced_trial(
@@ -426,7 +450,7 @@ def test_report_labels_openrouter_base_baseline() -> None:
     assert "Route, time-of-day and context-length overrides" in report
     assert "non-token fees are not applied" in report
     assert "aliases are not guessed" in report
-    assert "openrouter/openai/gpt-6-luna/base@2026-11-21" in report
+    assert f"openrouter/openai/gpt-6-luna/base@{SNAPSHOT_TIME}" in report
 
 
 def test_opencode_estimates_reasoning_at_the_output_rate() -> None:

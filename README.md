@@ -86,6 +86,17 @@ and variants are priced separately (for example `:batch` and `-1017`); aliases
 are not guessed. Refresh the snapshot from the public Models API with
 `python scripts/refresh_openrouter_models.py`.
 
+The **Refresh OpenRouter pricing** GitHub Actions workflow also checks the
+default branch every Monday at 02:00 UTC (09:00 WIB). Maintainers can run it
+manually from the Actions tab. A date-only change opens no PR; a changed
+catalog opens or updates one PR from `automation/openrouter-pricing` for review.
+The public OpenRouter API needs no key. To publish the PR, configure the
+repository Actions secret `PRICING_REFRESH_TOKEN` with a fine-grained GitHub
+token scoped to this repo with **Contents: Read and write** and **Pull
+requests: Read and write**. Using this token instead of `GITHUB_TOKEN` lets
+the refresh PR trigger normal CI. No prices reach the default branch unless
+the refresh PR is merged.
+
 Use `--repairs N` to let a failed acceptance suite trigger up to N more agent
 attempts in the same workspace (default 0, maximum 5). Use `--parallel N` to
 run up to N isolated trials together (default 1, maximum 8). Each repair gets
