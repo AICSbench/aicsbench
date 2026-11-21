@@ -35,7 +35,7 @@ def test_flat_export_keeps_unavailable_metrics_null() -> None:
     assert row["input_tokens"] is None
     assert (row["harness"], row["harness_version"]) == ("codex", "0.167.2")
     assert (row["requested_model"], row["reasoning_effort"]) == ("gpt-6-luna", "high")
-    assert list(row)[-9:] == [
+    assert list(row)[-13:-4] == [
         "harness",
         "harness_version",
         "requested_model",
@@ -76,7 +76,7 @@ def test_export_adds_installed_version_columns() -> None:
     row = json.loads(export_trials([item], "jsonl"))
     assert row["language_version_installed"] == "3.12.7"
     assert row["framework_version_installed"] == "0.115.2"
-    assert list(row)[-5:] == [
+    assert list(row)[-9:-4] == [
         "language_version_installed",
         "framework_version_installed",
         "provider",
@@ -132,6 +132,46 @@ def test_report_and_export_cli(tmp_path: Path) -> None:
     assert next(csv.DictReader(io.StringIO(report_csv.output)))["value"] == "fastapi"
 
 
+def test_cli_estimates_luna_cost_with_partial_coverage(tmp_path: Path) -> None:
+    store = JsonResultStore(tmp_path)
+    store.save_manifest(manifest("r1"))
+    item = trial("r1", "priced", "codex", TrialStatus.FAILED)
+    item.agent.provider = "openai"
+    item.agent.requested_model = item.agent.resolved_model = "gpt-6-luna"
+    tokens = item.metrics.usage.tokens
+    tokens.accounting_scheme = "openai"
+    source = MetricSource.AGENT_REPORTED
+    tokens.input_tokens = Metric[int].of(100_000, source)
+    tokens.cached_input_tokens = Metric[int].of(80_000, source)
+    tokens.output_tokens = Metric[int].of(4_000, source)
+    tokens.reasoning_tokens = Metric[int].of(2_000, source)
+    store.save_trial(item)
+    for trial_id in ("no-cache-count", "custom-endpoint"):
+        other = item.model_copy(deep=True, update={"trial_id": trial_id})
+        if trial_id == "no-cache-count":
+            other.metrics.usage.tokens.cached_input_tokens = Metric[int].unavailable()
+        else:
+            other.agent.endpoint_host = "gateway.example"
+        store.save_trial(other)
+
+    runner = CliRunner()
+    args = ["--results-dir", str(tmp_path)]
+    exported = runner.invoke(app, [*args, "export", "--run", "r1", "--format", "jsonl"])
+    assert exported.exit_code == 0, exported.output
+    rows = {row["trial_id"]: row for row in map(json.loads, exported.output.splitlines())}
+    assert rows["priced"]["estimated_api_cost_usd"] == pytest.approx(0.0048)
+    assert rows["priced"]["estimated_api_cost_model_assumed"] is True
+    assert rows["priced"]["cost_usd"] is None
+    assert rows["no-cache-count"]["estimated_api_cost_usd"] is None
+    assert rows["custom-endpoint"]["estimated_api_cost_usd"] is None
+
+    report = runner.invoke(app, [*args, "report", "--run", "r1", "--format", "json"])
+    assert report.exit_code == 0, report.output
+    row = json.loads(report.output)["groups"][0]
+    assert row["estimated_api_cost_usd"] == pytest.approx(0.0048)
+    assert (row["estimated_api_cost_samples"], row["trials"]) == (1, 3)
+
+
 def test_report_rejects_mixed_task_versions(tmp_path: Path) -> None:
     store = JsonResultStore(tmp_path)
     store.save_manifest(manifest("r1"))
@@ -148,7 +188,7 @@ def test_markdown_report_escapes_group_label() -> None:
     item = trial("r1", "t1", "codex", TrialStatus.PASSED)
     item.environment.stack = "bad|stack\nnext"
     rows = compare_trials([item], ComparisonDimension.STACK)
-    report = render_report(rows, "stack", "markdown")
+    report = render_report(rows, ComparisonDimension.STACK, "markdown", [item])
     assert "bad&#124;stack next" in report
     assert "| bad|stack" not in report
 
@@ -163,7 +203,9 @@ def test_report_json_rejects_nonfinite_aggregate() -> None:
     item = trial("r1", "t1", "codex", TrialStatus.PASSED)
     row = compare_trials([item], ComparisonDimension.STACK)[0]
     with pytest.raises(ValueError):
-        render_report([replace(row, mean_seconds=float("nan"))], "stack", "json")
+        render_report(
+            [replace(row, mean_seconds=float("nan"))], ComparisonDimension.STACK, "json", [item]
+        )
 
 
 def test_report_filters_mixed_modes_and_auth(tmp_path: Path) -> None:

@@ -859,7 +859,7 @@ def report(
         rows = compare_trials(trials, by, min_trials)
         if not rows:
             raise ValueError("no results match")
-        typer.echo(render_report(rows, by.value, fmt), nl=False)
+        typer.echo(render_report(rows, by, fmt, trials), nl=False)
     except (BenchmarkError, ValueError) as exc:
         raise _fail(str(exc)) from None
 

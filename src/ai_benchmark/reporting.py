@@ -10,7 +10,36 @@ from html import escape
 from typing import Any
 
 from ai_benchmark.comparison import ComparisonRow
+from ai_benchmark.models.enums import ComparisonDimension
 from ai_benchmark.models.results import TrialResult
+
+# USD per million uncached input, cached input, and output tokens.
+_LUNA_RATES = (0.10, 0.01, 0.50)
+_LUNA_RATE_CARD = "openai/gpt-6-luna/standard-short-context@2026-11-13"
+_PRICE_SOURCE = "https://developers.openai.com/api/docs/pricing"
+
+
+def _estimated_api_cost(trial: TrialResult) -> float | None:
+    agent = trial.agent
+    model = agent.resolve_model(agent.requested_model, agent.reported_model)
+    tokens = trial.metrics.usage.tokens
+    if (
+        (agent.name, agent.provider, model) != ("codex", "openai", "gpt-6-luna")
+        or agent.endpoint_host is not None
+        or tokens.accounting_scheme != "openai"
+    ):
+        return None
+    total_input = tokens.input_tokens.value
+    cached = tokens.cached_input_tokens.value
+    output = tokens.output_tokens.value
+    if total_input is None or cached is None or output is None:
+        return None
+    if not 0 <= cached <= total_input or output < 0:
+        return None
+    uncached_rate, cached_rate, output_rate = _LUNA_RATES
+    return (
+        (total_input - cached) * uncached_rate + cached * cached_rate + output * output_rate
+    ) / 1e6
 
 
 def trial_row(trial: TrialResult) -> dict[str, str | int | float | bool | None]:
@@ -87,7 +116,20 @@ def csv_text(rows: list[dict[str, Any]]) -> str:
 
 
 def export_trials(trials: list[TrialResult], fmt: str) -> str:
-    rows = [trial_row(trial) for trial in trials]
+    rows = []
+    for trial in trials:
+        estimate = _estimated_api_cost(trial)
+        rows.append(
+            {
+                **trial_row(trial),
+                "estimated_api_cost_usd": estimate,
+                "estimated_api_cost_rate_card": _LUNA_RATE_CARD if estimate is not None else None,
+                "estimated_api_cost_price_source": _PRICE_SOURCE if estimate is not None else None,
+                "estimated_api_cost_model_assumed": (
+                    not trial.agent.reported_model.value if estimate is not None else None
+                ),
+            }
+        )
     if fmt == "csv":
         return csv_text(rows)
     if fmt == "jsonl":
@@ -99,32 +141,56 @@ def _markdown_label(value: str) -> str:
     return escape(value).replace("|", "&#124;").replace("\n", " ").replace("\r", " ")
 
 
-def render_report(rows: list[ComparisonRow], dimension: str, fmt: str) -> str:
-    data = [asdict(row) for row in rows]
+def render_report(
+    rows: list[ComparisonRow], dimension: ComparisonDimension, fmt: str, trials: list[TrialResult]
+) -> str:
+    estimates: dict[str, list[float]] = {}
+    for trial in trials:
+        estimate = _estimated_api_cost(trial)
+        if estimate is not None:
+            group = trial.dimension_value(dimension)
+            estimates.setdefault(group, []).append(estimate)
+    data = []
+    for row in rows:
+        values = estimates.get(row.value, [])
+        data.append(
+            {
+                **asdict(row),
+                "estimated_api_cost_usd": sum(values) if values else None,
+                "estimated_api_cost_samples": len(values),
+                "estimated_api_cost_rate_card": _LUNA_RATE_CARD if values else None,
+                "estimated_api_cost_price_source": _PRICE_SOURCE if values else None,
+            }
+        )
     if fmt == "json":
         return (
-            json.dumps({"compare_by": dimension, "groups": data}, indent=2, allow_nan=False) + "\n"
+            json.dumps({"compare_by": dimension.value, "groups": data}, indent=2, allow_nan=False)
+            + "\n"
         )
     if fmt == "csv":
         return csv_text(data)
     if fmt != "markdown":
         raise ValueError("format must be markdown, json, or csv")
     lines = [
-        f"# Benchmark comparison by {dimension}",
+        f"# Benchmark comparison by {dimension.value}",
         "",
         "| Group | Passed/trials | Rate limited | Timed | Mean time (s) | "
-        "Std dev (s) | Mean cost (USD) | Cost samples | Confidence |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "Std dev (s) | Mean cost (USD) | Cost samples | Estimated API cost (USD, total) | "
+        "Estimated trials | Confidence |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
-    for row in rows:
+    for row, group_data in zip(rows, data, strict=True):
         label = _markdown_label(row.value)
         mean = f"{row.mean_seconds:.2f}" if row.mean_seconds is not None else "n/a"
         dev = f"{row.stdev_seconds:.2f}" if row.stdev_seconds is not None else "n/a"
         cost = f"{row.mean_cost_usd:.4f}" if row.mean_cost_usd is not None else "n/a"
+        total = group_data["estimated_api_cost_usd"]
+        estimate_text = f"{total:.6f}" if total is not None else "n/a"
         lines.append(
             f"| {label} | "
             f"{row.passed}/{row.trials} | {row.rate_limited} | "
             f"{row.timed} | {mean} | {dev} | {cost} | {row.cost_samples} | "
+            f"{estimate_text} | {group_data['estimated_api_cost_samples']}/{row.trials} | "
             f"{'low' if row.low_confidence else 'ok'} |"
         )
     lines.extend(["", "## Success rate", "", "| Group | Success |", "| --- | --- |"])
@@ -137,6 +203,10 @@ def render_report(rows: list[ComparisonRow], dimension: str, fmt: str) -> str:
             "",
             "Agent time uses passing trials without rate-limit events and an available timer.",
             "Success rate includes all trials. Cost is n/a when unavailable.",
+            "Estimated API cost is not a charge. Totals include all priced trials, even failures; "
+            "unpriced trials are not counted as zero.",
+            f"Rate card: [{_LUNA_RATE_CARD}]({_PRICE_SOURCE}). Assumes Standard short-context "
+            "pricing and the requested model when the CLI does not report one.",
             "",
         ]
     )
