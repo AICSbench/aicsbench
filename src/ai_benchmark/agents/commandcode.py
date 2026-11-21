@@ -69,8 +69,7 @@ class CommandCodeAdapter(CliAgentAdapter):
         cmd = [
             self.executable,
             "--trust",
-            "--permission-mode",
-            "yolo",
+            "--yolo",
             "--safe-mode",
             "--no-skills",
             "--no-session",
@@ -92,16 +91,21 @@ class CommandCodeAdapter(CliAgentAdapter):
 
     def parse_usage(self, raw: dict[str, Any]) -> tuple[UsageMetrics, Metric[str]]:
         usage = raw.get("usage")
-        # Early failures can report a zero-filled usage object without running a model.
-        if not isinstance(usage, dict) or raw.get("subtype") not in {"success", "max_turns"}:
+        if not isinstance(usage, dict):
             usage = {}
         inputs = int_or_none(usage.get("inputTokens"))
         outputs = int_or_none(usage.get("outputTokens"))
+        cached_inputs = int_or_none(usage.get("cacheReadTokens"))
+        # An early failure can report all zeros without having run a model.
+        if raw.get("subtype") not in {"success", "max_turns"} and not any(
+            count is not None and count > 0 for count in (inputs, outputs, cached_inputs)
+        ):
+            inputs = outputs = cached_inputs = None
         return (
             UsageMetrics(
                 tokens=TokenUsage(
                     input_tokens=token_metric(inputs),
-                    cached_input_tokens=token_metric(int_or_none(usage.get("cacheReadTokens"))),
+                    cached_input_tokens=token_metric(cached_inputs),
                     output_tokens=token_metric(outputs),
                     total_tokens=token_metric(
                         None if inputs is None or outputs is None else inputs + outputs

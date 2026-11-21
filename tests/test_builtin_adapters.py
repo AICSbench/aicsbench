@@ -230,6 +230,7 @@ def test_commandcode_headless_result(tmp_path: Path) -> None:
         task(tmp_path, model="example", reasoning_effort="low"), runner
     )
     assert result.succeeded
+    assert "--yolo" in runner.calls[0]["command"]
     assert runner.calls[0]["command"][-6:] == [
         "--model",
         "example",
@@ -245,15 +246,18 @@ def test_commandcode_headless_result(tmp_path: Path) -> None:
     assert not result.reported_model.is_available
 
 
-def test_commandcode_early_error_has_no_usage(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("inputs", "expected"), [(0, None), (1200, 1200)])
+def test_commandcode_error_retains_only_nonzero_usage(
+    tmp_path: Path, inputs: int, expected: int | None
+) -> None:
     runner = StubRunner(
         '{"type":"result","subtype":"error","error":"HTTP 429: quota exceeded",'
-        '"usage":{"inputTokens":0,"outputTokens":0,"cacheReadTokens":0}}\n',
+        f'"usage":{{"inputTokens":{inputs},"outputTokens":0,"cacheReadTokens":0}}}}\n',
         exit_code=3,
     )
     result = CommandCodeAdapter().run(task(tmp_path), runner)
     assert result.stopped_by_rate_limit
-    assert not result.usage.tokens.input_tokens.is_available
+    assert result.usage.tokens.total_tokens.value == expected
 
 
 def test_garbage_output_is_unavailable_not_zero(tmp_path: Path) -> None:
