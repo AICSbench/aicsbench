@@ -9,13 +9,13 @@ environment_notes: |
   - A Cargo binary project with Axum 0.8.4 is initialized; replace the placeholder main.
   - PostgreSQL 16 runs at postgres:5432. Use DATABASE_URL for the connection.
 setup_commands:
-  - [sh, -lc, "cargo init --name benchmark-app --vcs none && cargo add axum@=0.8.4"]
+  - [sh, -c, "cargo init --name benchmark-app --vcs none && cargo add axum@=0.8.4"]
 env:
   CARGO_HOME: /home/agent/.cargo
   DATABASE_URL: postgresql://bench:bench@postgres:5432/bench
 version_probes:
-  language: [sh, -lc, "rustc --version | cut -d ' ' -f 2"]
-  framework: [sh, -lc, "cargo tree --depth 1 --prefix none | sed -n 's/^axum v//p'"]
+  language: [sh, -ec, "version=$(rustc --version); echo \"$version\" | cut -d ' ' -f 2"]
+  framework: [sh, -ec, "tree=$(cargo tree --depth 1 --prefix none); echo \"$tree\" | sed -n 's/^axum v//p'"]
 services:
   - name: postgres
     image: postgres:16.4-alpine

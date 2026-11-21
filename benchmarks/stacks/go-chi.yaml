@@ -9,13 +9,13 @@ environment_notes: |
   - A Go module with chi v5.2.1 is initialized. Keep that router version.
   - PostgreSQL 16 runs at postgres:5432. Use DATABASE_URL for the connection.
 setup_commands:
-  - [sh, -lc, "go mod init benchmark.local/app && go get github.com/go-chi/chi/v5@v5.2.1"]
+  - [sh, -c, "go mod init benchmark.local/app && go get github.com/go-chi/chi/v5@v5.2.1"]
 env:
   GOPATH: /home/agent/go
   DATABASE_URL: postgresql://bench:bench@postgres:5432/bench
 version_probes:
-  language: [sh, -lc, "go env GOVERSION | sed 's/^go//'"]
-  framework: [sh, -lc, "go list -m -f '{{.Version}}' github.com/go-chi/chi/v5 | sed 's/^v//'"]
+  language: [sh, -ec, "version=$(go env GOVERSION); echo \"${version#go}\""]
+  framework: [sh, -ec, "version=$(go list -m -f '{{.Version}}' github.com/go-chi/chi/v5); echo \"${version#v}\""]
 services:
   - name: postgres
     image: postgres:16.4-alpine

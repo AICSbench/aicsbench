@@ -154,8 +154,8 @@ def test_shipped_stacks_declare_language_and_framework_probes(settings: Platform
         assert "language" in stack.version_probes, stack_id
         assert "framework" in stack.version_probes, stack_id
         for name, command in stack.version_probes.items():
-            # Probes are shell commands run like setup_commands, in the stack workdir.
-            assert command[:2] == ["sh", "-lc"] and command[-1].strip(), (stack_id, name)
+            # Probes may preserve the image PATH by using a non-login shell.
+            assert command[0] == "sh" and command[-1].strip(), (stack_id, name)
     assert set(catalog.get_stack("laravel13-boost").version_probes) == {
         "language",
         "framework",
