@@ -73,6 +73,12 @@ In results, the agent CLI is called the **harness** (`claude`, `codex`,
 (newest version, or `<id>@<version>`), each exactly the single-task comparison,
 plus an overall success rate, coverage and mean rank per row.
 
+`report` and `export` estimate API-equivalent cost using the model maker's
+published rates, regardless of the harness or gateway. The estimate is separate
+from reported cost and is unavailable if the model, rate, or token counts are
+unknown. The CLI currently prices GPT-6 Luna (standard short context), GLM-5.3-Flash
+(standard), and DeepSeek V4.1 Flash (peak rate, as a fixed comparison baseline).
+
 Use `--repairs N` to let a failed acceptance suite trigger up to N more agent
 attempts in the same workspace (default 0, maximum 5). Use `--parallel N` to
 run up to N isolated trials together (default 1, maximum 8). Each repair gets

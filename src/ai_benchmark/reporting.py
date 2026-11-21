@@ -7,26 +7,51 @@ import io
 import json
 from dataclasses import asdict
 from html import escape
-from typing import Any
+from typing import Any, NamedTuple
 
 from ai_benchmark.comparison import ComparisonRow
 from ai_benchmark.models.enums import ComparisonDimension
 from ai_benchmark.models.results import TrialResult
 
-# USD per million uncached input, cached input, and output tokens.
-_LUNA_RATES = (0.10, 0.01, 0.50)
-_LUNA_RATE_CARD = "openai/gpt-6-luna/standard-short-context@2026-11-13"
-_PRICE_SOURCE = "https://developers.openai.com/api/docs/pricing"
+
+class _RateCard(NamedTuple):
+    label: str
+    source: str
+    # USD per million uncached input, cached input, and output tokens.
+    rates: tuple[float, float, float]
 
 
-def _estimated_api_cost(trial: TrialResult) -> float | None:
+_RATE_CARDS = {
+    "gpt-6-luna": _RateCard(
+        "openai/gpt-6-luna/standard-short-context@2026-11-13",
+        "https://developers.openai.com/api/docs/pricing",
+        (0.10, 0.01, 0.50),
+    ),
+    "glm-5.3-flash": _RateCard(
+        "z-ai/glm-5.3-flash/standard@2026-11-21",
+        "https://docs.z.ai/guides/overview/pricing",
+        (0.15, 0.03, 0.50),
+    ),
+    "deepseek-v4.1-flash": _RateCard(
+        "deepseek/deepseek-v4.1-flash/peak@2026-11-21",
+        "https://api-docs.deepseek.com/quick_start/pricing/",
+        (0.30, 0.006, 1.20),
+    ),
+}
+_RATE_CARDS["deepseek-v4.1-flash-1017"] = _RATE_CARDS["deepseek-v4.1-flash"]
+_RATE_CARDS["deepseek-flash"] = _RATE_CARDS["deepseek-v4.1-flash"]
+
+
+def _estimated_api_cost(trial: TrialResult) -> tuple[float, _RateCard] | None:
     agent = trial.agent
     model = agent.resolve_model(agent.requested_model, agent.reported_model)
+    card = _RATE_CARDS.get(model.lower().rsplit("/", 1)[-1]) if model else None
     tokens = trial.metrics.usage.tokens
-    if (
-        (agent.name, agent.provider, model) != ("codex", "openai", "gpt-6-luna")
-        or agent.endpoint_host is not None
-        or tokens.accounting_scheme != "openai"
+    # Both formats include cache reads in input. Older Command Code reports don't
+    # declare a scheme; don't assume the same convention for other adapters.
+    if card is None or not (
+        tokens.accounting_scheme == "openai"
+        or (tokens.accounting_scheme is None and agent.name == "commandcode")
     ):
         return None
     total_input = tokens.input_tokens.value
@@ -36,10 +61,11 @@ def _estimated_api_cost(trial: TrialResult) -> float | None:
         return None
     if not 0 <= cached <= total_input or output < 0:
         return None
-    uncached_rate, cached_rate, output_rate = _LUNA_RATES
-    return (
+    uncached_rate, cached_rate, output_rate = card.rates
+    amount = (
         (total_input - cached) * uncached_rate + cached * cached_rate + output * output_rate
     ) / 1e6
+    return amount, card
 
 
 def trial_row(trial: TrialResult) -> dict[str, str | int | float | bool | None]:
@@ -122,9 +148,9 @@ def export_trials(trials: list[TrialResult], fmt: str) -> str:
         rows.append(
             {
                 **trial_row(trial),
-                "estimated_api_cost_usd": estimate,
-                "estimated_api_cost_rate_card": _LUNA_RATE_CARD if estimate is not None else None,
-                "estimated_api_cost_price_source": _PRICE_SOURCE if estimate is not None else None,
+                "estimated_api_cost_usd": estimate[0] if estimate is not None else None,
+                "estimated_api_cost_rate_card": estimate[1].label if estimate is not None else None,
+                "estimated_api_cost_price_source": estimate[1].source if estimate else None,
                 "estimated_api_cost_model_assumed": (
                     not trial.agent.reported_model.value if estimate is not None else None
                 ),
@@ -144,22 +170,30 @@ def _markdown_label(value: str) -> str:
 def render_report(
     rows: list[ComparisonRow], dimension: ComparisonDimension, fmt: str, trials: list[TrialResult]
 ) -> str:
-    estimates: dict[str, list[float]] = {}
+    estimates: dict[str, list[tuple[float, _RateCard]]] = {}
     for trial in trials:
         estimate = _estimated_api_cost(trial)
         if estimate is not None:
-            group = trial.dimension_value(dimension)
+            group = (
+                f"{trial.agent.name} + {trial.agent.model_label}"
+                if dimension is ComparisonDimension.HARNESS_MODEL
+                else trial.dimension_value(dimension)
+            )
             estimates.setdefault(group, []).append(estimate)
     data = []
+    used_cards: set[_RateCard] = set()
     for row in rows:
         values = estimates.get(row.value, [])
+        cards = {card for _, card in values}
+        used_cards.update(cards)
         data.append(
             {
                 **asdict(row),
-                "estimated_api_cost_usd": sum(values) if values else None,
+                "estimated_api_cost_usd": sum(amount for amount, _ in values) if values else None,
                 "estimated_api_cost_samples": len(values),
-                "estimated_api_cost_rate_card": _LUNA_RATE_CARD if values else None,
-                "estimated_api_cost_price_source": _PRICE_SOURCE if values else None,
+                "estimated_api_cost_rate_card": "; ".join(sorted({c.label for c in cards})) or None,
+                "estimated_api_cost_price_source": "; ".join(sorted({c.source for c in cards}))
+                or None,
             }
         )
     if fmt == "json":
@@ -203,10 +237,10 @@ def render_report(
             "",
             "Agent time uses passing trials without rate-limit events and an available timer.",
             "Success rate includes all trials. Cost is n/a when unavailable.",
-            "Estimated API cost is not a charge. Totals include all priced trials, even failures; "
-            "unpriced trials are not counted as zero.",
-            f"Rate card: [{_LUNA_RATE_CARD}]({_PRICE_SOURCE}). Assumes Standard short-context "
-            "pricing and the requested model when the CLI does not report one.",
+            "Estimated API cost uses official model API rates, not actual charges. Totals include "
+            "all priced trials, even failures; unpriced trials are not counted as zero.",
+            "The requested model is used when the CLI does not report one.",
+            *[f"Rate card: [{card.label}]({card.source})." for card in sorted(used_cards)],
             "",
         ]
     )

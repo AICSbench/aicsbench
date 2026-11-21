@@ -146,12 +146,14 @@ def test_cli_estimates_luna_cost_with_partial_coverage(tmp_path: Path) -> None:
     tokens.output_tokens = Metric[int].of(4_000, source)
     tokens.reasoning_tokens = Metric[int].of(2_000, source)
     store.save_trial(item)
-    for trial_id in ("no-cache-count", "custom-endpoint"):
+    for trial_id in ("no-cache-count", "custom-endpoint", "legacy-provider"):
         other = item.model_copy(deep=True, update={"trial_id": trial_id})
         if trial_id == "no-cache-count":
             other.metrics.usage.tokens.cached_input_tokens = Metric[int].unavailable()
-        else:
+        elif trial_id == "custom-endpoint":
             other.agent.endpoint_host = "gateway.example"
+        else:
+            other.agent.provider = None
         store.save_trial(other)
 
     runner = CliRunner()
@@ -163,13 +165,62 @@ def test_cli_estimates_luna_cost_with_partial_coverage(tmp_path: Path) -> None:
     assert rows["priced"]["estimated_api_cost_model_assumed"] is True
     assert rows["priced"]["cost_usd"] is None
     assert rows["no-cache-count"]["estimated_api_cost_usd"] is None
-    assert rows["custom-endpoint"]["estimated_api_cost_usd"] is None
+    assert rows["custom-endpoint"]["estimated_api_cost_usd"] == pytest.approx(0.0048)
+    assert rows["legacy-provider"]["estimated_api_cost_usd"] == pytest.approx(0.0048)
 
     report = runner.invoke(app, [*args, "report", "--run", "r1", "--format", "json"])
     assert report.exit_code == 0, report.output
     row = json.loads(report.output)["groups"][0]
-    assert row["estimated_api_cost_usd"] == pytest.approx(0.0048)
-    assert (row["estimated_api_cost_samples"], row["trials"]) == (1, 3)
+    assert row["estimated_api_cost_usd"] == pytest.approx(0.0144)
+    assert (row["estimated_api_cost_samples"], row["trials"]) == (3, 4)
+
+    alias = runner.invoke(
+        app, [*args, "report", "--run", "r1", "--by", "harness_model", "--format", "json"]
+    )
+    # Harness comparisons intentionally refuse unknown providers, unlike stack reports.
+    assert alias.exit_code == 1
+    store.save_trial(item.model_copy(update={"trial_id": "legacy-provider"}))
+    alias = runner.invoke(
+        app, [*args, "report", "--run", "r1", "--by", "harness_model", "--format", "json"]
+    )
+    assert alias.exit_code == 0, alias.output
+    group = json.loads(alias.output)["groups"][0]
+    assert group["value"] == "codex + gpt-6-luna"
+    assert group["estimated_api_cost_usd"] == pytest.approx(0.0144)
+
+
+def test_report_uses_the_official_rate_for_each_model() -> None:
+    glm = trial("r1", "glm", "commandcode", TrialStatus.PASSED)
+    glm.agent.requested_model = glm.agent.resolved_model = "z-ai/glm-5.3-flash"
+    glm.agent.provider = "commandcode"
+    tokens = glm.metrics.usage.tokens
+    source = MetricSource.AGENT_REPORTED
+    tokens.input_tokens = Metric[int].of(100_000, source)
+    tokens.cached_input_tokens = Metric[int].of(80_000, source)
+    tokens.output_tokens = Metric[int].of(4_000, source)
+
+    deepseek = glm.model_copy(deep=True, update={"trial_id": "deepseek"})
+    deepseek.agent.resolved_model = "deepseek/deepseek-v4.1-flash-1017"
+    deepseek.agent.reported_model = Metric[str].of(deepseek.agent.resolved_model, source)
+    unknown = glm.model_copy(deep=True, update={"trial_id": "unknown"})
+    unknown.agent.requested_model = unknown.agent.resolved_model = "z-ai/glm-5.3-flashx"
+    trials = [glm, deepseek, unknown]
+
+    glm_row, deepseek_row, unknown_row = map(
+        json.loads, export_trials(trials, "jsonl").splitlines()
+    )
+    assert glm_row["estimated_api_cost_usd"] == pytest.approx(0.0074)
+    assert deepseek_row["estimated_api_cost_usd"] == pytest.approx(0.01128)
+    assert deepseek_row["estimated_api_cost_model_assumed"] is False
+    assert unknown_row["estimated_api_cost_usd"] is None
+
+    dimension = ComparisonDimension.MODEL
+    report = render_report(compare_trials(trials, dimension), dimension, "json", trials)
+    groups = {group["value"]: group for group in json.loads(report)["groups"]}
+    for item, exported in zip(trials, (glm_row, deepseek_row, unknown_row), strict=True):
+        group = groups[item.agent.model_label]
+        assert group["estimated_api_cost_usd"] == exported["estimated_api_cost_usd"]
+        assert group["estimated_api_cost_rate_card"] == exported["estimated_api_cost_rate_card"]
 
 
 def test_report_rejects_mixed_task_versions(tmp_path: Path) -> None:
