@@ -547,12 +547,21 @@ def test_in_band_agent_error_with_zero_exit_is_not_passed(
             result.error = "Unknown model provider: bogus"
             return result
 
-    o = build(env_settings, FakeEnvironment())  # every acceptance test passes
+    env = FakeEnvironment(junit=JUNIT_ONE_FAIL)
+    env.tester_exit = 1
+    o = build(env_settings, env)
     o.registry.register(InBandErrorAdapter)
-    o.run(experiment(agents=[AgentSelection(agent="in-band-error", model="m1")]))
+    o.run(experiment(agents=[AgentSelection(agent="in-band-error", model="m1")], max_repairs=1))
     [r] = list(o.store.iter_trials())
     assert r.status is TrialStatus.AGENT_ERROR
     assert r.error == "Unknown model provider: bogus"
+    # An agent error is not repairable: the same invalid model must not be retried.
+    attempts = [
+        cmd
+        for kind, cmd in env.calls
+        if kind == "exec" and cmd[:1] == ["fake"] and cmd[1:2] != ["--version"]
+    ]
+    assert len(attempts) == 1
 
 
 def test_infra_error_is_recorded_and_can_abort(env_settings: PlatformSettings) -> None:
