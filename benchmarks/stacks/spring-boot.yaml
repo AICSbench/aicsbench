@@ -6,7 +6,7 @@ framework_version: "3.4.5"
 description: Spring Boot with Maven and PostgreSQL.
 image: maven:3.9.9-eclipse-temurin-21
 environment_notes: |
-  - A Maven project descriptor pins Spring Boot 3.4.5. Maven and Java 21 are available.
+  - A Maven project descriptor pins Spring Boot 3.4.5 with spring-boot-starter-web. Maven and Java 21 are available.
   - PostgreSQL 16 runs at postgres:5432. DATABASE_URL is a PostgreSQL URL, not a JDBC URL.
 setup_commands:
   - - sh
@@ -23,6 +23,12 @@ setup_commands:
         </parent>
         <groupId>bench</groupId><artifactId>app</artifactId><version>1.0.0</version>
         <properties><java.version>21</java.version></properties>
+        <dependencies>
+          <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+          </dependency>
+        </dependencies>
       </project>
       XML
 env:
@@ -33,7 +39,16 @@ version_probes:
     - -lc
     - >-
       "$JAVA_HOME/bin/java" -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java\.version = //p'
-  framework: [sh, -lc, "mvn -B -q -Dstyle.color=never help:evaluate -Dexpression=project.parent.version -DforceStdout | sed 's/\x1b\\[[0-9;]*m//g'"]
+  # The parent POM version alone proves nothing: read the resolved Boot artifact
+  # from the app's dependencies, and only after Maven succeeds.
+  framework:
+    - sh
+    - -ec
+    - |
+      mvn -B -q -Dstyle.color=never dependency:list \
+        -DincludeArtifactIds=spring-boot \
+        -DoutputFile=/tmp/spring-boot-deps.txt
+      sed -n 's/.*org\.springframework\.boot:spring-boot:jar:\([^:]*\):.*/\1/p' /tmp/spring-boot-deps.txt
 services:
   - name: postgres
     image: postgres:16.4-alpine

@@ -13,7 +13,7 @@ env:
   DATABASE_URL: postgresql://bench:bench@postgres:5432/bench
 version_probes:
   language: [sh, -lc, "ruby -e 'puts RUBY_VERSION'"]
-  framework: [sh, -lc, "ruby -e 'puts Gem::Specification.find_by_name(\"rails\").version'"]
+  framework: [sh, -lc, "bundle exec ruby -e 'require \"rails\"; puts Rails.version'"]
 services:
   - name: postgres
     image: postgres:16.4-alpine
