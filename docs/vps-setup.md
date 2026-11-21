@@ -104,6 +104,7 @@ Load the env file before running and confirm everything is found:
 ```bash
 set -a; . ~/.config/ai-benchmark.env; set +a
 aicsbench agents --check --auth subscription
+aicsbench agents --check --auth api_key   # covers Amp; ignore other harnesses' missing keys
 ```
 
 Exact file locations and variable names are confirmed per agent in Phase 2;
