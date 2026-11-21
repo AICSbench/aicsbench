@@ -10,7 +10,54 @@ from html import escape
 from typing import Any
 
 from ai_benchmark.comparison import ComparisonRow
+from ai_benchmark.models.enums import ComparisonDimension
 from ai_benchmark.models.results import TrialResult
+from ai_benchmark.pricing import ModelPrice, default_catalog
+
+
+def _estimated_api_cost(trial: TrialResult) -> tuple[float, ModelPrice] | None:
+    agent = trial.agent
+    model = agent.resolve_model(agent.requested_model, agent.reported_model)
+    price = default_catalog().lookup(model) if model else None
+    tokens = trial.metrics.usage.tokens
+    # OpenAI counts cache reads inside input and reasoning inside output. Older
+    # Command Code reports follow its input convention without declaring a scheme.
+    # OpenCode normalizes both the other way: its adapter adds cache reads and
+    # writes back to input, and keeps reasoning separate from output.
+    pricing_scheme = tokens.accounting_scheme
+    if pricing_scheme is None and agent.name == "opencode":
+        pricing_scheme = "opencode"
+    elif pricing_scheme is None and agent.name == "commandcode":
+        pricing_scheme = "openai"
+    if price is None or pricing_scheme not in {"openai", "opencode"}:
+        return None
+    prompt_rate, completion_rate = price.prompt, price.completion
+    if prompt_rate is None or completion_rate is None:
+        return None
+    total_input = tokens.input_tokens.value
+    cached = tokens.cached_input_tokens.value
+    output = tokens.output_tokens.value
+    if total_input is None or cached is None or output is None:
+        return None
+    if not 0 <= cached <= total_input or output < 0:
+        return None
+    if pricing_scheme == "opencode":
+        # OpenCode charges reasoning at the output rate. Its normalized output
+        # excludes reasoning, so a missing count is unknown, not zero.
+        reasoning = tokens.reasoning_tokens.value
+        if reasoning is None or reasoning < 0:
+            return None
+        output += reasoning
+    cached_rate = price.cache_read
+    if cached_rate is None:
+        # No listed cache-read rate: zero cached tokens need no rate, but any
+        # cached tokens make the input cost unknown.
+        if cached != 0:
+            return None
+        cached_rate = 0.0
+    amount = (total_input - cached) * prompt_rate + cached * cached_rate + output * completion_rate
+    # Avoid binary floating-point noise in JSON/CSV; 12 places preserve sub-cent costs.
+    return round(amount, 12), price
 
 
 def trial_row(trial: TrialResult) -> dict[str, str | int | float | bool | None]:
@@ -87,7 +134,20 @@ def csv_text(rows: list[dict[str, Any]]) -> str:
 
 
 def export_trials(trials: list[TrialResult], fmt: str) -> str:
-    rows = [trial_row(trial) for trial in trials]
+    rows = []
+    for trial in trials:
+        estimate = _estimated_api_cost(trial)
+        rows.append(
+            {
+                **trial_row(trial),
+                "estimated_api_cost_usd": estimate[0] if estimate is not None else None,
+                "estimated_api_cost_rate_card": estimate[1].label if estimate is not None else None,
+                "estimated_api_cost_price_source": estimate[1].source if estimate else None,
+                "estimated_api_cost_model_assumed": (
+                    not trial.agent.reported_model.value if estimate is not None else None
+                ),
+            }
+        )
     if fmt == "csv":
         return csv_text(rows)
     if fmt == "jsonl":
@@ -99,32 +159,64 @@ def _markdown_label(value: str) -> str:
     return escape(value).replace("|", "&#124;").replace("\n", " ").replace("\r", " ")
 
 
-def render_report(rows: list[ComparisonRow], dimension: str, fmt: str) -> str:
-    data = [asdict(row) for row in rows]
+def render_report(
+    rows: list[ComparisonRow], dimension: ComparisonDimension, fmt: str, trials: list[TrialResult]
+) -> str:
+    estimates: dict[str, list[tuple[float, ModelPrice]]] = {}
+    for trial in trials:
+        estimate = _estimated_api_cost(trial)
+        if estimate is not None:
+            group = (
+                f"{trial.agent.name} + {trial.agent.model_label}"
+                if dimension is ComparisonDimension.HARNESS_MODEL
+                else trial.dimension_value(dimension)
+            )
+            estimates.setdefault(group, []).append(estimate)
+    data = []
+    used_cards: set[ModelPrice] = set()
+    for row in rows:
+        values = estimates.get(row.value, [])
+        cards = {card for _, card in values}
+        used_cards.update(cards)
+        data.append(
+            {
+                **asdict(row),
+                "estimated_api_cost_usd": sum(amount for amount, _ in values) if values else None,
+                "estimated_api_cost_samples": len(values),
+                "estimated_api_cost_rate_card": "; ".join(sorted({c.label for c in cards})) or None,
+                "estimated_api_cost_price_source": "; ".join(sorted({c.source for c in cards}))
+                or None,
+            }
+        )
     if fmt == "json":
         return (
-            json.dumps({"compare_by": dimension, "groups": data}, indent=2, allow_nan=False) + "\n"
+            json.dumps({"compare_by": dimension.value, "groups": data}, indent=2, allow_nan=False)
+            + "\n"
         )
     if fmt == "csv":
         return csv_text(data)
     if fmt != "markdown":
         raise ValueError("format must be markdown, json, or csv")
     lines = [
-        f"# Benchmark comparison by {dimension}",
+        f"# Benchmark comparison by {dimension.value}",
         "",
         "| Group | Passed/trials | Rate limited | Timed | Mean time (s) | "
-        "Std dev (s) | Mean cost (USD) | Cost samples | Confidence |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "Std dev (s) | Mean cost (USD) | Cost samples | Estimated API cost (USD, total) | "
+        "Estimated trials | Confidence |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
-    for row in rows:
+    for row, group_data in zip(rows, data, strict=True):
         label = _markdown_label(row.value)
         mean = f"{row.mean_seconds:.2f}" if row.mean_seconds is not None else "n/a"
         dev = f"{row.stdev_seconds:.2f}" if row.stdev_seconds is not None else "n/a"
         cost = f"{row.mean_cost_usd:.4f}" if row.mean_cost_usd is not None else "n/a"
+        total = group_data["estimated_api_cost_usd"]
+        estimate_text = f"{total:.6f}" if total is not None else "n/a"
         lines.append(
             f"| {label} | "
             f"{row.passed}/{row.trials} | {row.rate_limited} | "
             f"{row.timed} | {mean} | {dev} | {cost} | {row.cost_samples} | "
+            f"{estimate_text} | {group_data['estimated_api_cost_samples']}/{row.trials} | "
             f"{'low' if row.low_confidence else 'ok'} |"
         )
     lines.extend(["", "## Success rate", "", "| Group | Success |", "| --- | --- |"])
@@ -137,6 +229,18 @@ def render_report(rows: list[ComparisonRow], dimension: str, fmt: str) -> str:
             "",
             "Agent time uses passing trials without rate-limit events and an available timer.",
             "Success rate includes all trials. Cost is n/a when unavailable.",
+            "Estimated API cost uses OpenRouter listed base prompt, completion and cache-read "
+            "rates from a dated snapshot as a fixed comparison baseline; it is not an official "
+            "vendor price or an actual bill. Route, time-of-day and context-length overrides, "
+            "cache-write and separate internal-reasoning rates, and non-token fees are not "
+            "applied. Totals include all priced trials, even failures; unpriced trials are not "
+            "counted as zero.",
+            "The requested model is used when the CLI does not report one. Exact IDs and "
+            "variants are priced separately; aliases are not guessed.",
+            *[
+                f"Rate card: [{card.label}]({card.source})."
+                for card in sorted(used_cards, key=lambda card: card.label)
+            ],
             "",
         ]
     )
