@@ -11,6 +11,7 @@ from ai_benchmark.agents import AgentTask, default_registry
 from ai_benchmark.agents.claude_code import ClaudeCodeAdapter
 from ai_benchmark.agents.cli import CliAgentAdapter
 from ai_benchmark.agents.codex import CodexAdapter
+from ai_benchmark.agents.commandcode import CommandCodeAdapter
 from ai_benchmark.agents.opencode import OpenCodeAdapter
 from ai_benchmark.environment.base import CommandResult
 from ai_benchmark.models import AuthMode
@@ -58,10 +59,12 @@ def run(adapter: CliAgentAdapter, tmp_path: Path, sample: str, exit_code: int = 
 
 
 def test_builtins_are_registered() -> None:
-    assert {"claude", "codex", "opencode"} <= set(default_registry.names())
+    assert {"claude", "codex", "commandcode", "opencode"} <= set(default_registry.names())
 
 
-@pytest.mark.parametrize("cls", [ClaudeCodeAdapter, CodexAdapter, OpenCodeAdapter])
+@pytest.mark.parametrize(
+    "cls", [ClaudeCodeAdapter, CodexAdapter, CommandCodeAdapter, OpenCodeAdapter]
+)
 def test_image_layer_pins_version_and_needs_node(cls: type[CliAgentAdapter]) -> None:
     layer = cls().image_layer()
     assert layer.cli_version == cls.cli_version
@@ -215,6 +218,46 @@ def test_opencode_rate_limit(tmp_path: Path) -> None:
     assert "HTTP 429" in result.rate_limit_events[0].message
     assert not result.usage.tokens.input_tokens.is_available
     assert not result.usage.turns.is_available
+
+
+def test_commandcode_headless_result(tmp_path: Path) -> None:
+    runner = StubRunner(
+        '{"type":"event","event":{"type":"run_end"}}\n'
+        '{"type":"result","subtype":"success","usage":{"inputTokens":1200,'
+        '"outputTokens":50,"cacheReadTokens":800,"cacheWriteTokens":100}}\n'
+    )
+    result = CommandCodeAdapter().run(
+        task(tmp_path, model="example", reasoning_effort="low"), runner
+    )
+    assert result.succeeded
+    assert "--yolo" in runner.calls[0]["command"]
+    assert runner.calls[0]["command"][-6:] == [
+        "--model",
+        "example",
+        "--effort",
+        "low",
+        "--print",
+        "Build the API",
+    ]
+    assert result.command[-1] == "<prompt>"
+    assert result.usage.tokens.input_tokens.value == 1200
+    assert result.usage.tokens.cached_input_tokens.value == 800
+    assert result.usage.tokens.total_tokens.value == 1250
+    assert not result.reported_model.is_available
+
+
+@pytest.mark.parametrize(("inputs", "expected"), [(0, None), (1200, 1200)])
+def test_commandcode_error_retains_only_nonzero_usage(
+    tmp_path: Path, inputs: int, expected: int | None
+) -> None:
+    runner = StubRunner(
+        '{"type":"result","subtype":"error","error":"HTTP 429: quota exceeded",'
+        f'"usage":{{"inputTokens":{inputs},"outputTokens":0,"cacheReadTokens":0}}}}\n',
+        exit_code=3,
+    )
+    result = CommandCodeAdapter().run(task(tmp_path), runner)
+    assert result.stopped_by_rate_limit
+    assert result.usage.tokens.total_tokens.value == expected
 
 
 def test_garbage_output_is_unavailable_not_zero(tmp_path: Path) -> None:

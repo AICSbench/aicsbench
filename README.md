@@ -162,7 +162,7 @@ src/ai_benchmark/
   cli/            Typer entry point (`aicsbench`)
   config/         Pydantic schemas: tasks, stacks, experiments, platform settings; YAML/JSON loader
   models/         Enums, metric schemas (with explicit availability), result records
-  agents/         AgentAdapter interface, registry, built-in claude/codex/opencode adapters
+  agents/         AgentAdapter interface, registry, built-in claude/codex/commandcode/opencode adapters
   environment/    ExecutionEnvironment interface, Docker implementation, per-trial workspaces
   orchestrator/   Planning (randomized, seeded), trial execution, git metrics, JUnit parsing
   dashboard.py     Loopback-only comparison dashboard
