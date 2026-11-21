@@ -90,7 +90,9 @@ The **Refresh OpenRouter pricing** GitHub Actions workflow also checks the
 default branch every Monday at 02:00 UTC (09:00 WIB). Maintainers can run it
 manually from the Actions tab. A date-only change opens no PR; a changed
 catalog opens or updates one PR from `automation/openrouter-pricing` for review.
-The public OpenRouter API needs no key. To publish the PR, configure the
+If a successful fetch matches the default branch, the workflow closes any
+obsolete refresh PR. A failed fetch leaves it untouched.
+The public OpenRouter API needs no key. To manage the refresh PR, configure the
 repository Actions secret `PRICING_REFRESH_TOKEN` with a fine-grained GitHub
 token scoped to this repo with **Contents: Read and write** and **Pull
 requests: Read and write**. Using this token instead of `GITHUB_TOKEN` lets
