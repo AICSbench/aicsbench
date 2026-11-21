@@ -1,0 +1,23 @@
+id: rails
+language: ruby
+language_version: "3.4.3"
+framework: rails
+framework_version: "8.0.2"
+description: Ruby and Rails backed by PostgreSQL.
+dockerfile: rails/Dockerfile
+environment_notes: |
+  - Rails 8.0.2 is available via the rails command. Create an API-only project.
+  - PostgreSQL 16 runs at postgres:5432. Use DATABASE_URL for the connection.
+env:
+  BUNDLE_PATH: /home/agent/.bundle/gems
+  DATABASE_URL: postgresql://bench:bench@postgres:5432/bench
+version_probes:
+  language: [sh, -lc, "ruby -e 'puts RUBY_VERSION'"]
+  framework: [sh, -lc, "ruby -e 'puts Gem::Specification.find_by_name(\"rails\").version'"]
+services:
+  - name: postgres
+    image: postgres:16.4-alpine
+    env: {POSTGRES_USER: bench, POSTGRES_PASSWORD: bench, POSTGRES_DB: bench}
+    ports: [5432]
+    healthcheck: [pg_isready, -U, bench]
+resources: {cpus: 2, memory: 4g}
