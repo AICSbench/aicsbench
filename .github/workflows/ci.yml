@@ -35,9 +35,9 @@ jobs:
       # The pinned OpenCode CLI keeps the custom-endpoint loader regression
       # (tests/test_custom_endpoints.py::..._in_the_real_loader) from skipping.
       - run: npm install -g --no-audit --no-fund opencode-ai@1.19.5
-      - run: ruff check src tests benchmarks
-      - run: ruff format --check src tests benchmarks
-      - run: mypy src
+      - run: ruff check src tests benchmarks scripts
+      - run: ruff format --check src tests benchmarks scripts
+      - run: mypy src scripts
       - run: pytest
       # The loader regression must run, not skip: the log line names it with
       # PASSED, since the pytest summary alone does not identify skips.

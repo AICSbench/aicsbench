@@ -73,13 +73,18 @@ In results, the agent CLI is called the **harness** (`claude`, `codex`,
 (newest version, or `<id>@<version>`), each exactly the single-task comparison,
 plus an overall success rate, coverage and mean rank per row.
 
-`report` and `export` estimate API-equivalent cost at the model maker's
-published rates, not the harness's or gateway's price, for trials whose token
-accounting the CLI supports. The estimate is separate from reported cost and is
-unavailable when the model, rate, or token counts are unknown or the accounting
-is unsupported. The CLI currently prices GPT-6 Luna (standard short context),
-GLM-5.3-Flash (standard), and DeepSeek V4.1 Flash (peak rate, as a fixed
-comparison baseline).
+`report` and `export` estimate API-equivalent cost from the newest bundled,
+dated OpenRouter catalog snapshot in `src/ai_benchmark/pricing/`, so they work
+offline. The estimate uses OpenRouter's listed base prompt, completion and
+cache-read token rates as a fixed comparison baseline, not an official vendor
+price or an actual bill. Route, time-of-day and context-length overrides,
+cache-write and separate internal-reasoning rates, and non-token fees are not
+applied. The estimate is separate from reported cost and is unavailable when
+the exact model ID (or an unambiguous bare ID), a base rate, or the token counts
+are unknown, or when the harness's token accounting is unsupported. Exact IDs
+and variants are priced separately (for example `:batch` and `-1017`); aliases
+are not guessed. Refresh the snapshot from the public Models API with
+`python scripts/refresh_openrouter_models.py`.
 
 Use `--repairs N` to let a failed acceptance suite trigger up to N more agent
 attempts in the same workspace (default 0, maximum 5). Use `--parallel N` to

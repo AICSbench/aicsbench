@@ -7,45 +7,18 @@ import io
 import json
 from dataclasses import asdict
 from html import escape
-from typing import Any, NamedTuple
+from typing import Any
 
 from ai_benchmark.comparison import ComparisonRow
 from ai_benchmark.models.enums import ComparisonDimension
 from ai_benchmark.models.results import TrialResult
+from ai_benchmark.pricing import ModelPrice, default_catalog
 
 
-class _RateCard(NamedTuple):
-    label: str
-    source: str
-    # USD per million uncached input, cached input, and output tokens.
-    rates: tuple[float, float, float]
-
-
-_RATE_CARDS = {
-    "gpt-6-luna": _RateCard(
-        "openai/gpt-6-luna/standard-short-context@2026-11-13",
-        "https://developers.openai.com/api/docs/pricing",
-        (0.10, 0.01, 0.50),
-    ),
-    "glm-5.3-flash": _RateCard(
-        "z-ai/glm-5.3-flash/standard@2026-11-21",
-        "https://docs.z.ai/guides/overview/pricing",
-        (0.15, 0.03, 0.50),
-    ),
-    "deepseek-v4.1-flash": _RateCard(
-        "deepseek/deepseek-v4.1-flash/peak@2026-11-21",
-        "https://api-docs.deepseek.com/quick_start/pricing/",
-        (0.30, 0.006, 1.20),
-    ),
-}
-_RATE_CARDS["deepseek-v4.1-flash-1017"] = _RATE_CARDS["deepseek-v4.1-flash"]
-_RATE_CARDS["deepseek-flash"] = _RATE_CARDS["deepseek-v4.1-flash"]
-
-
-def _estimated_api_cost(trial: TrialResult) -> tuple[float, _RateCard] | None:
+def _estimated_api_cost(trial: TrialResult) -> tuple[float, ModelPrice] | None:
     agent = trial.agent
     model = agent.resolve_model(agent.requested_model, agent.reported_model)
-    card = _RATE_CARDS.get(model.lower().rsplit("/", 1)[-1]) if model else None
+    price = default_catalog().lookup(model) if model else None
     tokens = trial.metrics.usage.tokens
     # OpenAI counts cache reads inside input and reasoning inside output. Older
     # Command Code reports follow its input convention without declaring a scheme.
@@ -56,7 +29,10 @@ def _estimated_api_cost(trial: TrialResult) -> tuple[float, _RateCard] | None:
         pricing_scheme = "opencode"
     elif pricing_scheme is None and agent.name == "commandcode":
         pricing_scheme = "openai"
-    if card is None or pricing_scheme not in {"openai", "opencode"}:
+    if price is None or pricing_scheme not in {"openai", "opencode"}:
+        return None
+    prompt_rate, completion_rate = price.prompt, price.completion
+    if prompt_rate is None or completion_rate is None:
         return None
     total_input = tokens.input_tokens.value
     cached = tokens.cached_input_tokens.value
@@ -72,11 +48,16 @@ def _estimated_api_cost(trial: TrialResult) -> tuple[float, _RateCard] | None:
         if reasoning is None or reasoning < 0:
             return None
         output += reasoning
-    uncached_rate, cached_rate, output_rate = card.rates
-    amount = (
-        (total_input - cached) * uncached_rate + cached * cached_rate + output * output_rate
-    ) / 1e6
-    return amount, card
+    cached_rate = price.cache_read
+    if cached_rate is None:
+        # No listed cache-read rate: zero cached tokens need no rate, but any
+        # cached tokens make the input cost unknown.
+        if cached != 0:
+            return None
+        cached_rate = 0.0
+    amount = (total_input - cached) * prompt_rate + cached * cached_rate + output * completion_rate
+    # Avoid binary floating-point noise in JSON/CSV; 12 places preserve sub-cent costs.
+    return round(amount, 12), price
 
 
 def trial_row(trial: TrialResult) -> dict[str, str | int | float | bool | None]:
@@ -181,7 +162,7 @@ def _markdown_label(value: str) -> str:
 def render_report(
     rows: list[ComparisonRow], dimension: ComparisonDimension, fmt: str, trials: list[TrialResult]
 ) -> str:
-    estimates: dict[str, list[tuple[float, _RateCard]]] = {}
+    estimates: dict[str, list[tuple[float, ModelPrice]]] = {}
     for trial in trials:
         estimate = _estimated_api_cost(trial)
         if estimate is not None:
@@ -192,7 +173,7 @@ def render_report(
             )
             estimates.setdefault(group, []).append(estimate)
     data = []
-    used_cards: set[_RateCard] = set()
+    used_cards: set[ModelPrice] = set()
     for row in rows:
         values = estimates.get(row.value, [])
         cards = {card for _, card in values}
@@ -248,10 +229,18 @@ def render_report(
             "",
             "Agent time uses passing trials without rate-limit events and an available timer.",
             "Success rate includes all trials. Cost is n/a when unavailable.",
-            "Estimated API cost uses official model API rates, not actual charges. Totals include "
-            "all priced trials, even failures; unpriced trials are not counted as zero.",
-            "The requested model is used when the CLI does not report one.",
-            *[f"Rate card: [{card.label}]({card.source})." for card in sorted(used_cards)],
+            "Estimated API cost uses OpenRouter listed base prompt, completion and cache-read "
+            "rates from a dated snapshot as a fixed comparison baseline; it is not an official "
+            "vendor price or an actual bill. Route, time-of-day and context-length overrides, "
+            "cache-write and separate internal-reasoning rates, and non-token fees are not "
+            "applied. Totals include all priced trials, even failures; unpriced trials are not "
+            "counted as zero.",
+            "The requested model is used when the CLI does not report one. Exact IDs and "
+            "variants are priced separately; aliases are not guessed.",
+            *[
+                f"Rate card: [{card.label}]({card.source})."
+                for card in sorted(used_cards, key=lambda card: card.label)
+            ],
             "",
         ]
     )

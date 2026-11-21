@@ -11,9 +11,9 @@ Before opening a pull request, all of these must pass:
 
 ```bash
 pytest
-ruff check src tests benchmarks
-ruff format --check src tests benchmarks
-mypy src
+ruff check src tests benchmarks scripts
+ruff format --check src tests benchmarks scripts
+mypy src scripts
 ```
 
 GitHub Actions runs these checks on Python 3.10 and 3.13, validates the
