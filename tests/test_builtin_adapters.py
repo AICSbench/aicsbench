@@ -8,12 +8,15 @@ from typing import Any
 import pytest
 
 from ai_benchmark.agents import AgentTask, default_registry
+from ai_benchmark.agents.amp import AmpAdapter
 from ai_benchmark.agents.claude_code import ClaudeCodeAdapter
 from ai_benchmark.agents.cli import CliAgentAdapter
 from ai_benchmark.agents.codex import CodexAdapter
 from ai_benchmark.agents.commandcode import CommandCodeAdapter
 from ai_benchmark.agents.opencode import OpenCodeAdapter
+from ai_benchmark.config.experiment import EndpointConfig
 from ai_benchmark.environment.base import CommandResult
+from ai_benchmark.errors import ConfigurationError
 from ai_benchmark.models import AuthMode
 
 SAMPLES = Path(__file__).parent / "fixtures" / "agents"
@@ -59,11 +62,11 @@ def run(adapter: CliAgentAdapter, tmp_path: Path, sample: str, exit_code: int = 
 
 
 def test_builtins_are_registered() -> None:
-    assert {"claude", "codex", "commandcode", "opencode"} <= set(default_registry.names())
+    assert {"amp", "claude", "codex", "commandcode", "opencode"} <= set(default_registry.names())
 
 
 @pytest.mark.parametrize(
-    "cls", [ClaudeCodeAdapter, CodexAdapter, CommandCodeAdapter, OpenCodeAdapter]
+    "cls", [AmpAdapter, ClaudeCodeAdapter, CodexAdapter, CommandCodeAdapter, OpenCodeAdapter]
 )
 def test_image_layer_pins_version_and_needs_node(cls: type[CliAgentAdapter]) -> None:
     layer = cls().image_layer()
@@ -96,6 +99,14 @@ def test_file_credentials_land_in_agent_home() -> None:
     assert codex.target == "/home/agent/.codex/auth.json"
     oc = OpenCodeAdapter().default_auth(AuthMode.SUBSCRIPTION).files[0]
     assert oc.target == "/home/agent/.local/share/opencode/auth.json"
+
+
+def test_amp_auth_is_api_key_only() -> None:
+    amp = AmpAdapter()
+    assert amp.default_auth(AuthMode.API_KEY).env == ["AMP_API_KEY"]
+    assert amp.capabilities().supported_auth_modes == (AuthMode.API_KEY,)
+    with pytest.raises(ConfigurationError, match="API-key only"):
+        amp.default_auth(AuthMode.SUBSCRIPTION)
 
 
 def test_opencode_api_key_variable_is_configurable() -> None:
@@ -138,8 +149,36 @@ def test_opencode_command(tmp_path: Path) -> None:
     assert cmd[-2:] == ["--", "Build the API"]
 
 
+def test_amp_command(tmp_path: Path) -> None:
+    cmd = AmpAdapter().build_command(
+        task(tmp_path, model="zhipuai/glm-5.3-flash", reasoning_effort="high")
+    )
+    assert cmd[:2] == ["amp", "--stream-json"]
+    assert cmd[cmd.index("--executor") + 1] == "local"
+    assert cmd[cmd.index("--model") + 1] == "zhipuai/glm-5.3-flash"
+    assert "--mode" not in cmd
+    assert cmd[cmd.index("--effort") + 1] == "high"
+    assert cmd[-2:] == ["--execute", "Build the API"]
+
+
+def test_amp_built_in_mode_uses_mode_not_model(tmp_path: Path) -> None:
+    cmd = AmpAdapter().build_command(task(tmp_path, model="High"))
+    assert cmd[cmd.index("--mode") + 1] == "high"
+    assert "--model" not in cmd
+
+
+def test_amp_rejects_custom_endpoints(tmp_path: Path) -> None:
+    endpoint = EndpointConfig(
+        provider="openrouter", base_url="https://example.com", api_key_env="K"
+    )
+    with pytest.raises(ConfigurationError, match="custom endpoints"):
+        AmpAdapter().build_command(task(tmp_path, model="zhipuai/glm-5.3-flash", endpoint=endpoint))
+    with pytest.raises(ConfigurationError, match="custom endpoints"):
+        AmpAdapter().endpoint_auth(endpoint)
+
+
 def test_defaults_omit_model_and_effort(tmp_path: Path) -> None:
-    for adapter in (ClaudeCodeAdapter(), CodexAdapter(), OpenCodeAdapter()):
+    for adapter in (AmpAdapter(), ClaudeCodeAdapter(), CodexAdapter(), OpenCodeAdapter()):
         cmd = adapter.build_command(task(tmp_path))
         assert "--model" not in cmd and "--effort" not in cmd and "--variant" not in cmd
 
@@ -260,8 +299,84 @@ def test_commandcode_error_retains_only_nonzero_usage(
     assert result.usage.tokens.total_tokens.value == expected
 
 
+def test_amp_success(tmp_path: Path) -> None:
+    result, runner = run(AmpAdapter(), tmp_path, "amp_success.jsonl")
+    assert result.succeeded and result.error is None and not result.rate_limit_events
+    tokens = result.usage.tokens
+    assert tokens.accounting_scheme == "amp"
+    # Amp counts cache writes and reads outside input_tokens; the adapter adds
+    # them back so input_tokens means all input, of which cached_input_tokens.
+    assert tokens.input_tokens.value == (1200 + 800 + 400) + 2400
+    assert tokens.cached_input_tokens.value == 400 + 2400
+    assert tokens.output_tokens.value == 60 + 30
+    assert tokens.total_tokens.value == (1200 + 800 + 400 + 2400) + 90
+    assert not tokens.reasoning_tokens.is_available
+    assert not result.usage.cost.is_available
+    assert result.usage.turns.value == 2
+    # The init message only echoes the requested model; a routed run can use
+    # several models, so the adapter never reports one.
+    assert not result.reported_model.is_available
+    assert result.raw["agent_mode"] == "zhipuai/glm-5.3-flash"
+    assert result.raw["tool_calls"] == 1
+    assert result.raw["tool_errors"] == 0
+    assert result.raw["result"]["subtype"] == "success"
+    assert result.command[-1] == "<prompt>"
+    assert "Build the API" not in result.command
+    assert runner.calls[0]["workdir"] == "/workspace"
+    assert runner.calls[0]["timeout"] == 600
+
+
+def test_amp_result_usage_is_not_double_counted(tmp_path: Path) -> None:
+    runner = StubRunner(
+        '{"type":"assistant","message":{"role":"assistant","content":[],'
+        '"usage":{"input_tokens":10,"cache_creation_input_tokens":20,"output_tokens":5}}}\n'
+        '{"type":"result","subtype":"success","is_error":false,"num_turns":1,'
+        '"usage":{"input_tokens":100,"cache_creation_input_tokens":200,'
+        '"cache_read_input_tokens":300,"output_tokens":50}}\n'
+    )
+    result = AmpAdapter().run(task(tmp_path), runner)
+    tokens = result.usage.tokens
+    assert tokens.input_tokens.value == 100 + 200 + 300
+    assert tokens.cached_input_tokens.value == 300
+    assert tokens.output_tokens.value == 50
+    assert tokens.total_tokens.value == 600 + 50
+
+
+def test_amp_empty_result_usage_falls_back_to_assistant_messages(tmp_path: Path) -> None:
+    runner = StubRunner(
+        '{"type":"assistant","message":{"role":"assistant","content":[],'
+        '"usage":{"input_tokens":10,"output_tokens":5}}}\n'
+        '{"type":"result","subtype":"success","is_error":false,"num_turns":1,"usage":{}}\n'
+    )
+    result = AmpAdapter().run(task(tmp_path), runner)
+    assert result.usage.tokens.input_tokens.value == 10
+    assert result.usage.tokens.output_tokens.value == 5
+    assert result.usage.tokens.total_tokens.value == 15
+
+
+def test_amp_usage_limit(tmp_path: Path) -> None:
+    result, _ = run(AmpAdapter(), tmp_path, "amp_usage_limit.jsonl", exit_code=1)
+    assert result.stopped_by_rate_limit
+    assert result.error and result.error.startswith("Out of credits")
+    assert result.rate_limit_events[0].message.startswith("Out of credits")
+    # Tokens consumed before the limit are real and stay recorded.
+    assert result.usage.tokens.input_tokens.value == 100 + 500
+    assert result.usage.tokens.total_tokens.value == 600 + 10
+    assert result.usage.turns.value == 1
+
+
+def test_amp_error_without_usage(tmp_path: Path) -> None:
+    result, _ = run(AmpAdapter(), tmp_path, "amp_bad_model.jsonl")
+    assert result.error == "Unknown model provider: bogus"
+    assert not result.rate_limit_events
+    # Amp exits 0 for a result error, so the error text is the only signal.
+    assert not result.usage.tokens.input_tokens.is_available
+    assert not result.usage.tokens.output_tokens.is_available
+    assert result.usage.turns.value == 0
+
+
 def test_garbage_output_is_unavailable_not_zero(tmp_path: Path) -> None:
-    for adapter in (ClaudeCodeAdapter(), CodexAdapter(), OpenCodeAdapter()):
+    for adapter in (AmpAdapter(), ClaudeCodeAdapter(), CodexAdapter(), OpenCodeAdapter()):
         runner = StubRunner("segmentation fault\n", exit_code=139)
         result = adapter.run(task(tmp_path), runner)
         assert not result.succeeded
@@ -282,6 +397,7 @@ def test_limit_text_in_stderr_is_detected(tmp_path: Path) -> None:
         ("2.1.323 (Claude Code)\n", "2.1.323"),
         ("codex-cli 0.167.2\n", "0.167.2"),
         ("1.19.5\n", "1.19.5"),
+        ("0.0.1795276835-g0feb0c\n", "0.0.1795276835-g0feb0c"),
     ],
 )
 def test_version_parsing(output: str, version: str) -> None:

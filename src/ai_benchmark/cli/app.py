@@ -683,7 +683,7 @@ def compare(
         typer.Option(
             "--by",
             help="Comma-separated dimensions, e.g. stack or stack,model. "
-            "Harness is the agent CLI (e.g. claude, codex, commandcode, opencode).",
+            "Harness is the agent CLI (e.g. claude, codex, commandcode, opencode, amp).",
         ),
     ] = "stack",
     run_id: Annotated[Optional[str], typer.Option("--run")] = None,

@@ -29,7 +29,7 @@ from ai_benchmark.models.results import RateLimitEvent
 
 AGENT_HOME = "/home/agent"
 
-# Wording the three CLIs use when a provider usage or rate limit stops them.
+# Wording the CLIs use when a provider usage or rate limit stops them.
 # Matched case-insensitively against the agent's own error text only.
 RATE_LIMIT_PATTERNS = (
     r"usage limit",
@@ -40,6 +40,9 @@ RATE_LIMIT_PATTERNS = (
     r"\b429\b",
     r"quota exceeded",
     r"insufficient_quota",
+    r"out of credits",
+    r"insufficient credits",
+    r"low credit balance",
 )
 _RATE_LIMIT_RE = re.compile("|".join(RATE_LIMIT_PATTERNS), re.IGNORECASE)
 

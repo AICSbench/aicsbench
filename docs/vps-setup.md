@@ -89,6 +89,13 @@ ssh bench@<vps> chmod 600 ~/.codex/auth.json
 **OpenCode.** Run `opencode auth login` locally and copy
 `~/.local/share/opencode/auth.json` the same way.
 
+**Amp.** Amp has no subscription login file. Put an access token from Amp
+Settings in the env file and run Amp experiments with `--auth api_key`:
+
+```bash
+echo 'AMP_API_KEY=sgamp_<token>' >> ~/.config/ai-benchmark.env
+```
+
 You don't need the agent CLIs installed on the VPS for benchmarking; the
 copied files are enough.
 
