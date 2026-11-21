@@ -111,6 +111,10 @@ class AgentRunResult(BaseModel):
 
     exit_code: int | None = Field(description="None if the process never started or was killed.")
     timed_out: bool = False
+    reported_failure: bool = Field(
+        default=False,
+        description="The CLI reported a failure in its output even though it exited 0.",
+    )
     started_at: datetime
     finished_at: datetime
     command: list[str] = Field(default_factory=list, description="Exact argv, secrets redacted.")
@@ -127,7 +131,7 @@ class AgentRunResult(BaseModel):
 
     @property
     def succeeded(self) -> bool:
-        return self.exit_code == 0 and not self.timed_out
+        return self.exit_code == 0 and not self.timed_out and not self.reported_failure
 
     @property
     def stopped_by_rate_limit(self) -> bool:
