@@ -41,7 +41,7 @@ from ai_benchmark.agents.cli import (
 from ai_benchmark.agents.registry import register_agent
 from ai_benchmark.config.auth import AgentAuthConfig
 from ai_benchmark.config.experiment import EndpointConfig
-from ai_benchmark.environment.base import AgentImageLayer
+from ai_benchmark.environment.base import AgentImageLayer, CommandResult
 from ai_benchmark.errors import ConfigurationError
 from ai_benchmark.models.enums import AuthMode, MetricSource
 from ai_benchmark.models.metrics import Metric, TokenUsage, UsageMetrics
@@ -125,6 +125,10 @@ class AmpAdapter(CliAgentAdapter):
         """The built-in mode named by ``requested``, case-insensitively, else None."""
         candidate = requested.strip().lower()
         return candidate if candidate in AMP_MODES else None
+
+    def reported_failure(self, parsed: ParsedOutput, result: CommandResult) -> bool:
+        """Amp prints result errors but still exits 0; the error is the failure signal."""
+        return bool(parsed.errors)
 
     # -- output ---------------------------------------------------------------
 

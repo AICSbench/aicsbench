@@ -22,7 +22,7 @@ from ai_benchmark.agents.base import (
     AgentRunResult,
     AgentTask,
 )
-from ai_benchmark.environment.base import CommandRunner
+from ai_benchmark.environment.base import CommandResult, CommandRunner
 from ai_benchmark.models.enums import MetricSource
 from ai_benchmark.models.metrics import Metric
 from ai_benchmark.models.results import RateLimitEvent
@@ -119,6 +119,10 @@ class CliAgentAdapter(AgentAdapter):
         """
         return {}
 
+    def reported_failure(self, parsed: ParsedOutput, result: CommandResult) -> bool:
+        """Whether the CLI reported a failure even though it exited 0. Default: False."""
+        return False
+
     # -- AgentAdapter ---------------------------------------------------------
 
     def get_version(self, runner: CommandRunner) -> str | None:
@@ -169,6 +173,7 @@ class CliAgentAdapter(AgentAdapter):
         return AgentRunResult(
             exit_code=res.exit_code,
             timed_out=res.timed_out,
+            reported_failure=self.reported_failure(parsed, res),
             started_at=started,
             finished_at=finished,
             command=self.redact(command, task),

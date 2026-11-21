@@ -302,6 +302,7 @@ def test_commandcode_error_retains_only_nonzero_usage(
 def test_amp_success(tmp_path: Path) -> None:
     result, runner = run(AmpAdapter(), tmp_path, "amp_success.jsonl")
     assert result.succeeded and result.error is None and not result.rate_limit_events
+    assert not result.reported_failure
     tokens = result.usage.tokens
     assert tokens.accounting_scheme == "amp"
     # Amp counts cache writes and reads outside input_tokens; the adapter adds
@@ -370,6 +371,7 @@ def test_amp_error_without_usage(tmp_path: Path) -> None:
     assert result.error == "Unknown model provider: bogus"
     assert not result.rate_limit_events
     # Amp exits 0 for a result error, so the error text is the only signal.
+    assert result.reported_failure and not result.succeeded
     assert not result.usage.tokens.input_tokens.is_available
     assert not result.usage.tokens.output_tokens.is_available
     assert result.usage.turns.value == 0
