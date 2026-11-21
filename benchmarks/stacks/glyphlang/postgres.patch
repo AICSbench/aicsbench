@@ -1,0 +1,90 @@
+diff --git a/cmd/glyph/routes.go b/cmd/glyph/routes.go
+index e76dd4c..04f6355 100644
+--- a/cmd/glyph/routes.go
++++ b/cmd/glyph/routes.go
+@@ -10,4 +10,5 @@ import (
+ 	"github.com/glyphlang/glyph/pkg/ast"
+ 	"github.com/glyphlang/glyph/pkg/compiler"
++	"github.com/glyphlang/glyph/pkg/database"
+ 	"github.com/glyphlang/glyph/pkg/server"
+ 	"github.com/glyphlang/glyph/pkg/web"
+@@ -107,4 +108,12 @@ func setupRoutes(module *ast.Module, filePath string, forceInterpreter ...bool)
+ 	} else {
+ 		// Use interpreter mode
++		if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
++			handler, connectErr := database.NewHandlerFromString(dsn)
++			if connectErr != nil {
++				// Do not print connection errors that might include credentials.
++				return false, nil, nil, nil, fmt.Errorf("could not connect using DATABASE_URL")
++			}
++			interp.SetDatabaseHandler(handler)
++		}
+ 		// Pass the directory of the source file for proper module resolution
+ 		basePath := filepath.Dir(filePath)
+diff --git a/pkg/database/orm.go b/pkg/database/orm.go
+index ffd5c69..6f5a215 100644
+--- a/pkg/database/orm.go
++++ b/pkg/database/orm.go
+@@ -291,5 +291,4 @@ func (o *ORM) Create(ctx context.Context, data map[string]interface{}) (map[stri
+ 	}
+
+-	columns := make([]string, 0, len(data))
+ 	sanitizedColumns := make([]string, 0, len(data))
+ 	values := make([]interface{}, 0, len(data))
+@@ -303,5 +302,4 @@ func (o *ORM) Create(ctx context.Context, data map[string]interface{}) (map[stri
+ 			return nil, fmt.Errorf("invalid column name %q: %w", col, err)
+ 		}
+-		columns = append(columns, col)
+ 		sanitizedColumns = append(sanitizedColumns, sanitizedCol)
+ 		values = append(values, val)
+@@ -315,13 +313,5 @@ func (o *ORM) Create(ctx context.Context, data map[string]interface{}) (map[stri
+ 		strings.Join(placeholders, ", "))
+
+-	row := o.db.QueryRow(ctx, query, values...)
+-
+-	// Get column names for scanning
+-	result, err := scanRow(row, columns)
+-	if err != nil {
+-		return nil, err
+-	}
+-
+-	return result, nil
++	return o.returningRow(ctx, query, values...)
+ }
+
+@@ -340,5 +330,4 @@ func (o *ORM) Update(ctx context.Context, id interface{}, data map[string]interf
+ 	setClauses := make([]string, 0, len(data))
+ 	values := make([]interface{}, 0, len(data)+1)
+-	columns := make([]string, 0, len(data))
+
+ 	i := 1
+@@ -351,5 +340,4 @@ func (o *ORM) Update(ctx context.Context, id interface{}, data map[string]interf
+ 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", sanitizedCol, i))
+ 		values = append(values, val)
+-		columns = append(columns, col)
+ 		i++
+ 	}
+@@ -362,15 +350,16 @@ func (o *ORM) Update(ctx context.Context, id interface{}, data map[string]interf
+ 		i)
+
+-	row := o.db.QueryRow(ctx, query, values...)
+-
+-	// Add id to columns for scanning
+-	columns = append(columns, "id")
++	return o.returningRow(ctx, query, values...)
++}
+
+-	result, err := scanRow(row, columns)
++func (o *ORM) returningRow(ctx context.Context, query string, args ...interface{}) (map[string]interface{}, error) {
++	rows, err := o.Query(ctx, query, args...)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-
+-	return result, nil
++	if len(rows) == 0 {
++		return nil, sql.ErrNoRows
++	}
++	return rows[0], nil
+ }
+
