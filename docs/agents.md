@@ -6,7 +6,7 @@ in the workspace. Flags and output formats below were checked against the
 official docs and against the pinned CLI itself (`--help` and its output) on
 2026-11-13. Bumping a version means re-checking this page.
 
-In reports and comparisons the adapter name (`claude`, `codex`, `opencode`) is
+In reports and comparisons the adapter name (`claude`, `codex`, `commandcode`, `opencode`) is
 the **harness**, and its pinned CLI version is the **harness version**.
 
 | | Claude Code | Codex CLI | OpenCode |
@@ -46,6 +46,18 @@ Notes:
 - Raw stdout and stderr are kept per trial in `logs/agent.stdout.log` and
   `logs/agent.stderr.log`; the stored command line replaces the prompt with
   `<prompt>`.
+
+## Command Code
+
+Select `commandcode` (or `commandcode:<model>` to pin the requested model).
+The trial image installs `command-code@1.91.1` and runs the CLI headlessly
+with JSONL output. Subscription runs use `~/.commandcode/auth.json` after
+`commandcode login`; API-key runs use `COMMAND_CODE_API_KEY`. Custom endpoints
+are not supported by this adapter.
+
+The adapter reports input, cached input, and output tokens from the final
+result. Cost, reasoning tokens, turn count, and the actual model are left
+unavailable. Errors before inference do not turn missing metrics into zeros.
 
 ## Not yet supported
 
