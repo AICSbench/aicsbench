@@ -47,12 +47,16 @@ def _estimated_api_cost(trial: TrialResult) -> tuple[float, _RateCard] | None:
     model = agent.resolve_model(agent.requested_model, agent.reported_model)
     card = _RATE_CARDS.get(model.lower().rsplit("/", 1)[-1]) if model else None
     tokens = trial.metrics.usage.tokens
-    # Both formats include cache reads in input. Older Command Code reports don't
-    # declare a scheme; don't assume the same convention for other adapters.
-    if card is None or not (
-        tokens.accounting_scheme == "openai"
-        or (tokens.accounting_scheme is None and agent.name == "commandcode")
-    ):
+    # OpenAI counts cache reads inside input and reasoning inside output. Older
+    # Command Code reports follow its input convention without declaring a scheme.
+    # OpenCode normalizes both the other way: its adapter adds cache reads and
+    # writes back to input, and keeps reasoning separate from output.
+    pricing_scheme = tokens.accounting_scheme
+    if pricing_scheme is None and agent.name == "opencode":
+        pricing_scheme = "opencode"
+    elif pricing_scheme is None and agent.name == "commandcode":
+        pricing_scheme = "openai"
+    if card is None or pricing_scheme not in {"openai", "opencode"}:
         return None
     total_input = tokens.input_tokens.value
     cached = tokens.cached_input_tokens.value
@@ -61,6 +65,13 @@ def _estimated_api_cost(trial: TrialResult) -> tuple[float, _RateCard] | None:
         return None
     if not 0 <= cached <= total_input or output < 0:
         return None
+    if pricing_scheme == "opencode":
+        # OpenCode charges reasoning at the output rate. Its normalized output
+        # excludes reasoning, so a missing count is unknown, not zero.
+        reasoning = tokens.reasoning_tokens.value
+        if reasoning is None or reasoning < 0:
+            return None
+        output += reasoning
     uncached_rate, cached_rate, output_rate = card.rates
     amount = (
         (total_input - cached) * uncached_rate + cached * cached_rate + output * output_rate

@@ -223,6 +223,41 @@ def test_report_uses_the_official_rate_for_each_model() -> None:
         assert group["estimated_api_cost_rate_card"] == exported["estimated_api_cost_rate_card"]
 
 
+def test_opencode_estimates_reasoning_at_the_output_rate() -> None:
+    item = trial("r1", "opencode", "opencode", TrialStatus.PASSED)
+    item.agent.requested_model = "openai/gpt-6-luna"
+    item.agent.provider = "openai"
+    tokens = item.metrics.usage.tokens
+    source = MetricSource.AGENT_REPORTED
+    tokens.input_tokens = Metric[int].of(100_000, source)
+    tokens.cached_input_tokens = Metric[int].of(80_000, source)
+    tokens.output_tokens = Metric[int].of(4_000, source)
+    tokens.reasoning_tokens = Metric[int].of(2_000, source)
+
+    # (100k - 80k) uncached input + 80k cached + (4k output + 2k reasoning).
+    row = json.loads(export_trials([item], "jsonl"))
+    assert row["estimated_api_cost_usd"] == pytest.approx(0.0058)
+    assert row["estimated_api_cost_model_assumed"] is True
+
+    dimension = ComparisonDimension.HARNESS
+    report = json.loads(render_report(compare_trials([item], dimension), dimension, "json", [item]))
+    group = report["groups"][0]
+    assert group["value"] == "opencode"
+    assert group["estimated_api_cost_usd"] == pytest.approx(0.0058)
+    assert group["estimated_api_cost_samples"] == 1
+
+    # OpenCode's output excludes reasoning, so a missing reasoning count makes
+    # the output total unknown rather than zero.
+    tokens.reasoning_tokens = Metric[int].unavailable()
+    assert json.loads(export_trials([item], "jsonl"))["estimated_api_cost_usd"] is None
+
+    # A reported zero is a real count and remains priceable.
+    tokens.reasoning_tokens = Metric[int].of(0, source)
+    assert json.loads(export_trials([item], "jsonl"))["estimated_api_cost_usd"] == pytest.approx(
+        0.0048
+    )
+
+
 def test_report_rejects_mixed_task_versions(tmp_path: Path) -> None:
     store = JsonResultStore(tmp_path)
     store.save_manifest(manifest("r1"))
