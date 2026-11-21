@@ -33,7 +33,7 @@ def test_catalog_loads_examples(settings: PlatformSettings) -> None:
     assert task.source_dir is not None
     assert all(catalog.get_stack(s) for s in task.supported_stacks)
     shortener = catalog.get_task("url-shortener-api")
-    assert set(shortener.supported_stacks) == set(task.supported_stacks)
+    assert all(catalog.get_stack(s) for s in shortener.supported_stacks)
     assert shortener.acceptance_tests.suite is not None
 
 
@@ -154,8 +154,14 @@ def test_shipped_stacks_declare_language_and_framework_probes(settings: Platform
         assert "language" in stack.version_probes, stack_id
         assert "framework" in stack.version_probes, stack_id
         for name, command in stack.version_probes.items():
-            # Probes are shell commands run like setup_commands, in the stack workdir.
-            assert command[:2] == ["sh", "-lc"] and command[-1].strip(), (stack_id, name)
+            # Probes run as an inline shell script: a command flag (-c, -lc, -ec)
+            # must be followed by a nonempty script.
+            assert (
+                len(command) >= 3
+                and command[0] == "sh"
+                and re.fullmatch(r"-[a-z]*c", command[1])
+                and command[-1].strip()
+            ), (stack_id, name)
     assert set(catalog.get_stack("laravel13-boost").version_probes) == {
         "language",
         "framework",

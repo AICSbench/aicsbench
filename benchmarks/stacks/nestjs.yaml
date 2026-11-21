@@ -1,0 +1,25 @@
+id: nestjs
+language: typescript
+language_version: "5.8.3"
+framework: nestjs
+framework_version: "11.2.11"
+description: NestJS with TypeScript, Node.js and PostgreSQL.
+image: node:22.11.0-bookworm-slim
+environment_notes: |
+  - The starter package.json includes NestJS 11.2.11 and TypeScript 5.8.3.
+  - PostgreSQL 16 runs at postgres:5432. Use DATABASE_URL for the connection.
+setup_commands:
+  - [sh, -lc, "npm init -y && npm install --no-audit --no-fund --save-exact @nestjs/core@11.2.11 @nestjs/common@11.2.11 @nestjs/platform-express@11.2.11 reflect-metadata@0.2.2 rxjs@7.8.2 typescript@5.8.3"]
+env:
+  DATABASE_URL: postgresql://bench:bench@postgres:5432/bench
+version_probes:
+  language: [sh, -lc, "node -p \"require('typescript/package.json').version\""]
+  framework: [sh, -lc, "node -p \"require('@nestjs/core/package.json').version\""]
+  node: [sh, -lc, "node -p process.versions.node"]
+services:
+  - name: postgres
+    image: postgres:16.4-alpine
+    env: {POSTGRES_USER: bench, POSTGRES_PASSWORD: bench, POSTGRES_DB: bench}
+    ports: [5432]
+    healthcheck: [pg_isready, -U, bench]
+resources: {cpus: 2, memory: 4g}

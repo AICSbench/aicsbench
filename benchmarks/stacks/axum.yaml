@@ -1,0 +1,25 @@
+id: axum
+language: rust
+language_version: "1.86.0"
+framework: axum
+framework_version: "0.8.4"
+description: Rust with Axum and PostgreSQL.
+image: rust:1.86.0-bookworm
+environment_notes: |
+  - A Cargo binary project with Axum 0.8.4 is initialized; replace the placeholder main.
+  - PostgreSQL 16 runs at postgres:5432. Use DATABASE_URL for the connection.
+setup_commands:
+  - [sh, -c, "cargo init --name benchmark-app --vcs none && cargo add axum@=0.8.4"]
+env:
+  CARGO_HOME: /home/agent/.cargo
+  DATABASE_URL: postgresql://bench:bench@postgres:5432/bench
+version_probes:
+  language: [sh, -ec, "version=$(rustc --version); echo \"$version\" | cut -d ' ' -f 2"]
+  framework: [sh, -ec, "tree=$(cargo tree --depth 1 --prefix none); echo \"$tree\" | sed -n 's/^axum v//p'"]
+services:
+  - name: postgres
+    image: postgres:16.4-alpine
+    env: {POSTGRES_USER: bench, POSTGRES_PASSWORD: bench, POSTGRES_DB: bench}
+    ports: [5432]
+    healthcheck: [pg_isready, -U, bench]
+resources: {cpus: 2, memory: 4g}

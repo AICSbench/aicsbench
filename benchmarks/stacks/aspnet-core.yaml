@@ -1,0 +1,24 @@
+id: aspnet-core
+language: csharp
+language_version: "12"
+framework: aspnet-core
+framework_version: "8.0.15"
+description: ASP.NET Core Minimal API with .NET 8 and PostgreSQL.
+image: mcr.microsoft.com/dotnet/sdk:8.0.408-bookworm-slim
+environment_notes: |
+  - Use the .NET 8 SDK and target net8.0; its default language version is C# 12.
+  - PostgreSQL 16 runs at postgres:5432. DATABASE_URL is a PostgreSQL URL, not an Npgsql connection string.
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DATABASE_URL: postgresql://bench:bench@postgres:5432/bench
+version_probes:
+  language: [sh, -lc, "dotnet msbuild -nologo -getProperty:LangVersion"]
+  framework: [sh, -lc, "dotnet --list-runtimes | awk '$1 == \"Microsoft.AspNetCore.App\" {print $2}'"]
+  dotnet-sdk: [sh, -lc, "dotnet --version"]
+services:
+  - name: postgres
+    image: postgres:16.4-alpine
+    env: {POSTGRES_USER: bench, POSTGRES_PASSWORD: bench, POSTGRES_DB: bench}
+    ports: [5432]
+    healthcheck: [pg_isready, -U, bench]
+resources: {cpus: 2, memory: 4g}
