@@ -27,7 +27,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ai_benchmark.pricing import SOURCE  # noqa: E402
+from ai_benchmark.pricing import SOURCE, snapshot_filename  # noqa: E402
 
 KEPT_RATES = ("prompt", "completion", "input_cache_read")
 DEFAULT_DIRECTORY = Path(__file__).resolve().parents[1] / "src" / "ai_benchmark" / "pricing"
@@ -108,10 +108,9 @@ def main() -> None:
     )
     payload = json.loads(args.input.read_text(encoding="utf-8")) if args.input else fetch_payload()
     snapshot = build_snapshot(payload, retrieved_at)
-    output = (
-        args.output or DEFAULT_DIRECTORY / f"openrouter-models-{snapshot['retrieved_at'][:10]}.json"
-    )
-    output.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    output = args.output or DEFAULT_DIRECTORY / snapshot_filename(snapshot["retrieved_at"])
+    with output.open("w" if args.output else "x", encoding="utf-8") as file:
+        file.write(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
     print(f"wrote {output} ({snapshot['model_count']} models, {snapshot['retrieved_at']})")
 
 
