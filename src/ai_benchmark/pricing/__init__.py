@@ -16,7 +16,7 @@ import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import datetime
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
@@ -27,6 +27,10 @@ SOURCE = "https://openrouter.ai/api/v1/models"
 
 SNAPSHOT_PREFIX = "openrouter-models-"
 """Filename prefix for dated snapshots shipped in this package."""
+
+
+def snapshot_filename(retrieved_at: str) -> str:
+    return f"{SNAPSHOT_PREFIX}{retrieved_at.replace(':', '-')}.json"
 
 
 def _bundled_snapshot() -> Any:
@@ -52,13 +56,13 @@ class ModelPrice:
     prompt: float | None
     completion: float | None
     cache_read: float | None
-    snapshot_date: str
+    retrieved_at: str
     source: str = SOURCE
 
     @property
     def label(self) -> str:
         """A stable, explicit rate-card label for reports and exports."""
-        return f"openrouter/{self.model_id}/base@{self.snapshot_date}"
+        return f"openrouter/{self.model_id}/base@{self.retrieved_at}"
 
     @property
     def is_priceable(self) -> bool:
@@ -70,7 +74,7 @@ class ModelPrice:
 class Catalog:
     """A dated snapshot indexed by exact lower-case model ID."""
 
-    snapshot_date: str
+    retrieved_at: str
     models: Mapping[str, ModelPrice]
     source: str = SOURCE
 
@@ -108,15 +112,6 @@ def _rate(value: Any) -> float | None:
     return rate if math.isfinite(rate) and rate >= 0 else None
 
 
-def _snapshot_date(retrieved_at: Any) -> str:
-    if not isinstance(retrieved_at, str) or len(retrieved_at) < 10:
-        raise ValueError("OpenRouter snapshot needs a retrieved_at date")
-    try:
-        return date.fromisoformat(retrieved_at[:10]).isoformat()
-    except ValueError as exc:
-        raise ValueError(f"invalid OpenRouter snapshot date: {retrieved_at!r}") from exc
-
-
 def load_catalog(path: str | Path | None = None) -> Catalog:
     """Load the bundled snapshot, or ``path`` when given (tests/refresh)."""
     if path is None:
@@ -129,7 +124,12 @@ def load_catalog(path: str | Path | None = None) -> Catalog:
     source = document.get("source")
     if source != SOURCE:
         raise ValueError(f"unexpected OpenRouter snapshot source: {source!r}")
-    snapshot_date = _snapshot_date(document.get("retrieved_at"))
+    retrieved_at = document.get("retrieved_at")
+    if not isinstance(retrieved_at, str):
+        raise ValueError("OpenRouter snapshot needs a retrieved_at timestamp")
+    timestamp = datetime.strptime(retrieved_at, "%Y-%m-%dT%H:%M:%SZ")
+    if timestamp.strftime("%Y-%m-%dT%H:%M:%SZ") != retrieved_at:
+        raise ValueError(f"invalid OpenRouter snapshot timestamp: {retrieved_at!r}")
     entries = document.get("models")
     if not isinstance(entries, list):
         raise ValueError("OpenRouter snapshot needs a models list")
@@ -156,10 +156,10 @@ def load_catalog(path: str | Path | None = None) -> Catalog:
             prompt=_rate(pricing.get("prompt")),
             completion=_rate(pricing.get("completion")),
             cache_read=_rate(pricing.get("input_cache_read")),
-            snapshot_date=snapshot_date,
+            retrieved_at=retrieved_at,
             source=source,
         )
-    return Catalog(snapshot_date=snapshot_date, models=models, source=source)
+    return Catalog(retrieved_at=retrieved_at, models=models, source=source)
 
 
 @lru_cache(maxsize=1)
