@@ -90,3 +90,16 @@ shipped task version and a test fails when it drifts.
 - Pull request titles follow the same Conventional Commits format.
 - Never commit secrets. Configs reference credentials by environment
   variable name or file path only (see docs/agent-execution.md).
+
+### Smoke test evidence
+
+- After running a smoke test for a pull request, post the result as a comment
+  on that PR, even if the test fails. Include the tested commit, the scenario
+  and relevant versions, and the observed result (such as acceptance counts
+  and a run ID when safe to share).
+- Explain why the result supports merging or what still blocks it. Separate
+  what the test verified from anything it did not cover. If the test could
+  not run, report it as blocked, not passed.
+- Report the environment generically (for example, Docker on Linux ARM64).
+  Omit server IPs, hostnames, SSH details, credentials, private URLs and
+  paths, and raw logs that may expose them.
