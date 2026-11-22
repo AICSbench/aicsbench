@@ -67,11 +67,11 @@ aicsbench dashboard --port 8765
 ```
 
 In results, the agent CLI is called the **harness** (`claude`, `codex`,
-`opencode`); `--by harness_version` compares the versions it reported, and
-`--by` takes up to three comma-separated dimensions. `--tasks` (alias
-`--matrix`) compares the same groups across several tasks: one column per task
-(newest version, or `<id>@<version>`), each exactly the single-task comparison,
-plus an overall success rate, coverage and mean rank per row.
+`commandcode`, `opencode`, `amp`); `--by harness_version` compares the versions
+it reported, and `--by` takes up to three comma-separated dimensions. `--tasks`
+(alias `--matrix`) compares the same groups across several tasks: one column
+per task (newest version, or `<id>@<version>`), each exactly the single-task
+comparison, plus an overall success rate, coverage and mean rank per row.
 
 `report` and `export` estimate API-equivalent cost from the newest bundled,
 dated OpenRouter catalog snapshot in `src/ai_benchmark/pricing/`, so they work
@@ -188,7 +188,7 @@ src/ai_benchmark/
   cli/            Typer entry point (`aicsbench`)
   config/         Pydantic schemas: tasks, stacks, experiments, platform settings; YAML/JSON loader
   models/         Enums, metric schemas (with explicit availability), result records
-  agents/         AgentAdapter interface, registry, built-in claude/codex/commandcode/opencode adapters
+  agents/         AgentAdapter interface, registry, built-in claude/codex/commandcode/opencode/amp adapters
   environment/    ExecutionEnvironment interface, Docker implementation, per-trial workspaces
   orchestrator/   Planning (randomized, seeded), trial execution, git metrics, JUnit parsing
   dashboard.py     Loopback-only comparison dashboard
