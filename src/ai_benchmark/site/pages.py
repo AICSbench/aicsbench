@@ -57,7 +57,21 @@ STACK: tuple[Leaderboard, ...] = (("harness_model", ()),)
 
 
 def to_row(row: ComparisonRow) -> Row:
-    return Row(**asdict(row), success_rate=row.passed / row.trials)
+    # The site schema predates the CLI-only timing spread fields and keeps its
+    # fixtures stable; add them to Row before passing them through.
+    return Row(
+        value=row.value,
+        trials=row.trials,
+        passed=row.passed,
+        rate_limited=row.rate_limited,
+        timed=row.timed,
+        mean_seconds=row.mean_seconds,
+        stdev_seconds=row.stdev_seconds,
+        mean_cost_usd=row.mean_cost_usd,
+        cost_samples=row.cost_samples,
+        low_confidence=row.low_confidence,
+        success_rate=row.passed / row.trials,
+    )
 
 
 @dataclass

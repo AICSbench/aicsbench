@@ -141,6 +141,97 @@ def test_comparability_ignores_installed_versions() -> None:
     assert len(compare_trials([a, b], ComparisonDimension.STACK)) == 1
 
 
+def test_report_exposes_timing_spread_in_json_csv_and_markdown() -> None:
+    def timed(
+        trial_id: str,
+        seconds: float | None,
+        *,
+        status: TrialStatus = TrialStatus.PASSED,
+        limited: bool = False,
+    ) -> TrialResult:
+        item = trial("r1", trial_id, "codex", status, limited=limited)
+        if seconds is not None:
+            item.metrics.performance.agent_execution_seconds = Metric[float].of(
+                seconds, MetricSource.MEASURED
+            )
+        return item
+
+    trials = [
+        timed("two", 2.0),
+        timed("four", 4.0),
+        timed("hundred", 100.0),
+        timed("failed", 1.0, status=TrialStatus.FAILED),
+        timed("limited", 999.0, limited=True),
+        timed("no-timer", None),
+    ]
+    rows = compare_trials(trials, ComparisonDimension.STACK)
+
+    report = json.loads(render_report(rows, ComparisonDimension.STACK, "json", trials))
+    group = report["groups"][0]
+    assert (
+        group["timed"],
+        group["median_seconds"],
+        group["min_seconds"],
+        group["max_seconds"],
+    ) == (3, 4.0, 2.0, 100.0)
+
+    csv_row = next(
+        csv.DictReader(io.StringIO(render_report(rows, ComparisonDimension.STACK, "csv", trials)))
+    )
+    assert (
+        csv_row["timed"],
+        csv_row["median_seconds"],
+        csv_row["min_seconds"],
+        csv_row["max_seconds"],
+    ) == ("3", "4.0", "2.0", "100.0")
+
+    markdown = render_report(rows, ComparisonDimension.STACK, "markdown", trials)
+    assert (
+        "| Timed | Mean time (s) | Std dev (s) | Median time (s) | Min time (s) | "
+        "Max time (s) |" in markdown
+    )
+    line = next(line for line in markdown.splitlines() if line.startswith("| fastapi |"))
+    cells = [cell.strip() for cell in line.strip("|").split("|")]
+    assert cells[:9] == ["fastapi", "5/6", "1", "3", "35.33", "56.01", "4.00", "2.00", "100.00"]
+
+
+def test_report_shows_unavailable_timing_without_eligible_samples() -> None:
+    failed = trial("r1", "failed", "codex", TrialStatus.FAILED)
+    failed.metrics.performance.agent_execution_seconds = Metric[float].of(
+        1.0, MetricSource.MEASURED
+    )
+    limited = trial("r1", "limited", "codex", TrialStatus.PASSED, limited=True)
+    limited.metrics.performance.agent_execution_seconds = Metric[float].of(
+        999.0, MetricSource.MEASURED
+    )
+    no_timer = trial("r1", "no-timer", "codex", TrialStatus.PASSED)
+    trials = [failed, limited, no_timer]
+    rows = compare_trials(trials, ComparisonDimension.STACK)
+
+    report = json.loads(render_report(rows, ComparisonDimension.STACK, "json", trials))
+    group = report["groups"][0]
+    assert (
+        group["timed"],
+        group["median_seconds"],
+        group["min_seconds"],
+        group["max_seconds"],
+    ) == (0, None, None, None)
+
+    csv_row = next(
+        csv.DictReader(io.StringIO(render_report(rows, ComparisonDimension.STACK, "csv", trials)))
+    )
+    assert (csv_row["median_seconds"], csv_row["min_seconds"], csv_row["max_seconds"]) == (
+        "",
+        "",
+        "",
+    )
+
+    markdown = render_report(rows, ComparisonDimension.STACK, "markdown", trials)
+    line = next(line for line in markdown.splitlines() if line.startswith("| fastapi |"))
+    cells = [cell.strip() for cell in line.strip("|").split("|")]
+    assert cells[3:9] == ["0", "n/a", "n/a", "n/a", "n/a", "n/a"]
+
+
 def test_report_and_export_cli(tmp_path: Path) -> None:
     store = JsonResultStore(tmp_path)
     store.save_manifest(manifest("r1"))

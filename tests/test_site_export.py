@@ -290,9 +290,10 @@ def test_every_section_equals_compare_trials(fixture_data: Path, tmp_path: Path)
                 )
             ]
             expected = compare_trials(selected, ComparisonDimension(section["by"]))
+            cli_only = {"median_seconds", "min_seconds", "max_seconds"}
             assert [
                 {k: v for k, v in row.items() if k != "success_rate"} for row in section["rows"]
-            ] == [asdict(row) for row in expected]
+            ] == [{k: v for k, v in asdict(row).items() if k not in cli_only} for row in expected]
             checked += 1
     assert checked > 10
 

@@ -68,6 +68,62 @@ def test_compare_ranks_passing_times_and_counts_limit_hits() -> None:
     assert (rows[0].cost_samples, rows[1].cost_samples) == (3, 0)
 
 
+def test_compare_reports_median_and_range_from_eligible_times() -> None:
+    def timed(
+        trial_id: str,
+        seconds: float,
+        *,
+        status: TrialStatus = TrialStatus.PASSED,
+        limited: bool = False,
+    ) -> TrialResult:
+        item = trial("r1", trial_id, "codex", status, limited=limited)
+        item.metrics.performance.agent_execution_seconds = Metric[float].of(
+            seconds, MetricSource.MEASURED
+        )
+        return item
+
+    trials = [
+        timed("two", 2.0),
+        timed("four", 4.0),
+        timed("hundred", 100.0),
+        timed("failed", 1.0, status=TrialStatus.FAILED),
+        timed("limited", 999.0, limited=True),
+        trial("r1", "no-timer", "codex", TrialStatus.PASSED),
+    ]
+    [row] = compare_trials(trials, ComparisonDimension.STACK)
+    assert (row.timed, row.median_seconds, row.min_seconds, row.max_seconds) == (
+        3,
+        4.0,
+        2.0,
+        100.0,
+    )
+
+
+@pytest.mark.parametrize(
+    ("times", "expected"),
+    [
+        ([2.0, 8.0], (2, 5.0, 2.0, 8.0)),
+        ([2.0], (1, 2.0, 2.0, 2.0)),
+        ([], (0, None, None, None)),
+    ],
+)
+def test_compare_timing_spread_handles_even_one_and_no_samples(
+    times: list[float], expected: tuple[int, float | None, float | None, float | None]
+) -> None:
+    trials = []
+    for index, seconds in enumerate(times):
+        item = trial("r1", f"t{index}", "codex", TrialStatus.PASSED)
+        item.metrics.performance.agent_execution_seconds = Metric[float].of(
+            seconds, MetricSource.MEASURED
+        )
+        trials.append(item)
+    if not trials:
+        trials = [trial("r1", "no-timer", "codex", TrialStatus.PASSED)]
+
+    [row] = compare_trials(trials, ComparisonDimension.STACK)
+    assert (row.timed, row.median_seconds, row.min_seconds, row.max_seconds) == expected
+
+
 def test_compare_rejects_mixed_task_versions() -> None:
     a = trial("r1", "a", "codex", TrialStatus.PASSED)
     b = trial("r1", "b", "codex", TrialStatus.PASSED)

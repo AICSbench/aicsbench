@@ -201,21 +201,27 @@ def render_report(
         f"# Benchmark comparison by {dimension.value}",
         "",
         "| Group | Passed/trials | Rate limited | Timed | Mean time (s) | "
-        "Std dev (s) | Mean cost (USD) | Cost samples | Estimated API cost (USD, total) | "
+        "Std dev (s) | Median time (s) | Min time (s) | Max time (s) | "
+        "Mean cost (USD) | Cost samples | Estimated API cost (USD, total) | "
         "Estimated trials | Confidence |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
+        "---: | ---: | --- |",
     ]
     for row, group_data in zip(rows, data, strict=True):
         label = _markdown_label(row.value)
         mean = f"{row.mean_seconds:.2f}" if row.mean_seconds is not None else "n/a"
         dev = f"{row.stdev_seconds:.2f}" if row.stdev_seconds is not None else "n/a"
+        median = f"{row.median_seconds:.2f}" if row.median_seconds is not None else "n/a"
+        minimum = f"{row.min_seconds:.2f}" if row.min_seconds is not None else "n/a"
+        maximum = f"{row.max_seconds:.2f}" if row.max_seconds is not None else "n/a"
         cost = f"{row.mean_cost_usd:.4f}" if row.mean_cost_usd is not None else "n/a"
         total = group_data["estimated_api_cost_usd"]
         estimate_text = f"{total:.6f}" if total is not None else "n/a"
         lines.append(
             f"| {label} | "
             f"{row.passed}/{row.trials} | {row.rate_limited} | "
-            f"{row.timed} | {mean} | {dev} | {cost} | {row.cost_samples} | "
+            f"{row.timed} | {mean} | {dev} | {median} | {minimum} | {maximum} | "
+            f"{cost} | {row.cost_samples} | "
             f"{estimate_text} | {group_data['estimated_api_cost_samples']}/{row.trials} | "
             f"{'low' if row.low_confidence else 'ok'} |"
         )
@@ -227,7 +233,8 @@ def render_report(
     lines.extend(
         [
             "",
-            "Agent time uses passing trials without rate-limit events and an available timer.",
+            "Agent time uses passing trials without rate-limit events and an available timer. "
+            "Median, min and max use the same eligible trials.",
             "Success rate includes all trials. Cost is n/a when unavailable.",
             "Estimated API cost uses OpenRouter listed base prompt, completion and cache-read "
             "rates from a dated snapshot as a fixed comparison baseline; it is not an official "
