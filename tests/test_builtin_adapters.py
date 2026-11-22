@@ -100,9 +100,12 @@ def test_agy_image_layer_pins_official_linux_builds() -> None:
 
 def test_agy_is_api_key_only() -> None:
     adapter = AgyAdapter()
-    assert adapter.default_auth(AuthMode.API_KEY).env == ["GEMINI_API_KEY"]
+    auth = adapter.default_auth(AuthMode.API_KEY)
+    assert auth.env == ["GEMINI_API_KEY"]
+    assert auth.missing({}) == ["environment variable GEMINI_API_KEY is not set"]
+    assert auth.missing({"GEMINI_API_KEY": "x"}) == []
     assert adapter.capabilities().supported_auth_modes == (AuthMode.API_KEY,)
-    with pytest.raises(ConfigurationError, match="API-key"):
+    with pytest.raises(ConfigurationError, match="subscription auth"):
         adapter.default_auth(AuthMode.SUBSCRIPTION)
 
 

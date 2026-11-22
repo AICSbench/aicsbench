@@ -169,9 +169,15 @@ class AgyAdapter(CliAgentAdapter):
 
     def default_auth(self, mode: AuthMode) -> AgentAuthConfig:
         if mode is AuthMode.SUBSCRIPTION:
+            # Official headless auth uses credentials cached by an interactive
+            # sign-in; on Linux those live in the OS keyring. A fresh trial
+            # container has no such session, and 1.5.14's container file-based
+            # token store is write-only for a new process. Do not fall back to
+            # API-key billing silently.
             raise ConfigurationError(
-                "agy supports only API-key auth in this adapter; "
-                "run it with --auth api_key and GEMINI_API_KEY"
+                "agy subscription auth needs an interactive sign-in and a Linux "
+                "keyring, which a fresh trial container does not have; use "
+                "--auth api_key with GEMINI_API_KEY instead"
             )
         return AgentAuthConfig(mode=mode, env=["GEMINI_API_KEY"])
 

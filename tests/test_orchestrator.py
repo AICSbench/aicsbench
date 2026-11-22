@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from ai_benchmark.agents import AgentRegistry
+from ai_benchmark.agents.agy import AgyAdapter
 from ai_benchmark.config import AgentSelection, ExperimentConfig, SpecCatalog
 from ai_benchmark.config.settings import PlatformSettings
 from ai_benchmark.environment import DockerExecutionEnvironment, WorkspaceManager
@@ -113,6 +114,27 @@ def test_preflight_checks_credentials_and_auth_support(
     cfg = config(agents=[{"agent": "fake"}], trials=1)
     assert not [i for i in o.preflight(o.plan(cfg, run_id="r1")) if i.severity == "error"]
     assert o.plan(cfg, run_id="r1").auth_mode is AuthMode.SUBSCRIPTION
+
+
+def test_agy_preflight_selects_api_key_and_reports_missing_credentials(
+    settings: PlatformSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    o = make(settings)
+    o.registry.register(AgyAdapter)
+
+    # Subscription is rejected, not silently run as an API-key trial.
+    cfg = config(agents=[{"agent": "agy"}], trials=1)
+    errors = [i for i in o.preflight(o.plan(cfg, run_id="r1")) if i.severity == "error"]
+    assert [i.message for i in errors] == ["does not support auth mode 'subscription'"]
+
+    # API key is the supported mode; a missing host variable fails preflight.
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    cfg = config(agents=[{"agent": "agy"}], trials=1, auth_mode=AuthMode.API_KEY)
+    errors = [i for i in o.preflight(o.plan(cfg, run_id="r1")) if i.severity == "error"]
+    assert [i.message for i in errors] == ["environment variable GEMINI_API_KEY is not set"]
+
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    assert not [i for i in o.preflight(o.plan(cfg, run_id="r1")) if i.severity == "error"]
 
 
 def test_run_refuses_when_preflight_fails(settings: PlatformSettings) -> None:

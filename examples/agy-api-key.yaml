@@ -25,7 +25,9 @@ agents:
     # reasoning_effort: high
 stacks: [fastapi-latest]
 trials: 1   # raise for a real experiment
-# agy is API-key only in this adapter; interactive/subscription auth is out of scope.
+# agy is API-key only: Subscription sign-in needs an interactive login
+# and a Linux keyring, which a fresh trial container does not have. A
+# subscription run is rejected at preflight, not silently billed as API key.
 auth_mode: api_key
 tooling:
   mode: standard

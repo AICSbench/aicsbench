@@ -75,8 +75,22 @@ API-key auth only. Put `GEMINI_API_KEY` in the host environment (the config
 names the variable, never the value) and run with `auth_mode: api_key`. The
 image writes `modelProvider: gemini` to
 `/home/agent/.gemini/antigravity-cli/settings.json`; the key is injected per
-trial and never baked into the image or exported. Interactive sign-in,
-subscription auth, and remote agents are out of scope for this adapter.
+trial and never baked into the image or exported.
+
+**Subscription/account auth is blocked in the isolated trial container.** The
+official headless flow uses credentials cached by an interactive `agy`
+sign-in; on Linux the CLI reads them from the OS keyring (Secret Service over
+D-Bus), and the docs say to authenticate once interactively before a headless
+run. A trial container is fresh, non-interactive and does not mount the host
+keyring or home directory. Pinned 1.5.14 detects the container and switches to
+its file-based token store, but that store is not read back by a fresh process
+in a container (upstream issue #479, open), and a container-local keyring
+transplant is not accepted (upstream issue #223 comments; the subscription
+headless request #1194 is still open). Copying `antigravity-oauth-token` or the
+identity state therefore does not authenticate a fresh trial. The adapter
+rejects `subscription` at preflight and never falls back to API-key billing;
+use `auth_mode: api_key` with `GEMINI_API_KEY`. If Google publishes a supported
+headless OAuth/token flow, add it then.
 
 Choose a model with `agy models`; the slugs include the effort level, for
 example `gemini-3.8-flash-medium`. `reasoning_effort` maps to `--effort`
@@ -113,7 +127,9 @@ records that as unavailable, not as zero usage.
 - MCP servers (`best_ecosystem` tooling). Claude Code runs with
   `--strict-mcp-config`, so no MCP server is loaded in any mode yet. `agy`
   denies all MCP tools with `mcp(*)`.
-- Antigravity subscription/account auth, custom endpoints, and remote agents.
-  This adapter is API-key only.
+- Antigravity subscription/account auth: blocked because a fresh trial
+  container has no supported headless credential path (see above). Custom
+  endpoints and remote agents are also out of scope; this adapter is API-key
+  only.
 - Checking credentials before a trial: it would cost a model call, so a bad
   credential shows up as an `agent_error` on the first trial.

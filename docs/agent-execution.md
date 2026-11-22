@@ -67,11 +67,16 @@ experiment file.
 | Claude Code | env `CLAUDE_CODE_OAUTH_TOKEN` (create with `claude setup-token`; valid one year) | env `ANTHROPIC_API_KEY` |
 | Codex CLI | file `~/.codex/auth.json` (created by `codex login`, ChatGPT plan) | env `CODEX_API_KEY` (read directly by `codex exec`) |
 | OpenCode | file `~/.local/share/opencode/auth.json` (created by `opencode auth login`) | env named by the adapter option `api_key_env`, default `ANTHROPIC_API_KEY` |
-| Google Antigravity (`agy`) | **not supported** (interactive/keyring sign-in is out of scope) | env `GEMINI_API_KEY`; the image sets `modelProvider: gemini` in `~/.gemini/antigravity-cli/settings.json` |
+| Google Antigravity (`agy`) | **not supported** (official headless auth needs an interactive sign-in plus a Linux keyring; the container file-token path is not read back) | env `GEMINI_API_KEY`; the image sets `modelProvider: gemini` in `~/.gemini/antigravity-cli/settings.json` |
 
 Only the variables for the chosen mode are passed into the container. That
 matters for Claude Code, where `ANTHROPIC_API_KEY` would otherwise take
 precedence over a subscription token.
+
+Antigravity's `subscription` mode is rejected at preflight rather than falling
+back to API-key billing; see
+[agents.md](agents.md#google-antigravity-agy) for the container limitation.
+With `api_key`, preflight also fails when `GEMINI_API_KEY` is missing.
 
 Codex and OpenCode refresh their login tokens. With the default `copy` mode a
 refreshed token is thrown away with the container. If logins start expiring
