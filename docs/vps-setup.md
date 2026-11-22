@@ -89,6 +89,13 @@ ssh bench@<vps> chmod 600 ~/.codex/auth.json
 **OpenCode.** Run `opencode auth login` locally and copy
 `~/.local/share/opencode/auth.json` the same way.
 
+**Amp.** Amp has no subscription login file. Put an access token from Amp
+Settings in the env file and run Amp experiments with `--auth api_key`:
+
+```bash
+echo 'AMP_API_KEY=sgamp_<token>' >> ~/.config/ai-benchmark.env
+```
+
 You don't need the agent CLIs installed on the VPS for benchmarking; the
 copied files are enough.
 
@@ -97,6 +104,7 @@ Load the env file before running and confirm everything is found:
 ```bash
 set -a; . ~/.config/ai-benchmark.env; set +a
 aicsbench agents --check --auth subscription
+aicsbench agents --check --auth api_key   # covers Amp; ignore other harnesses' missing keys
 ```
 
 Exact file locations and variable names are confirmed per agent in Phase 2;

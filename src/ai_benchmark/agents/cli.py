@@ -22,14 +22,14 @@ from ai_benchmark.agents.base import (
     AgentRunResult,
     AgentTask,
 )
-from ai_benchmark.environment.base import CommandRunner
+from ai_benchmark.environment.base import CommandResult, CommandRunner
 from ai_benchmark.models.enums import MetricSource
 from ai_benchmark.models.metrics import Metric
 from ai_benchmark.models.results import RateLimitEvent
 
 AGENT_HOME = "/home/agent"
 
-# Wording the three CLIs use when a provider usage or rate limit stops them.
+# Wording the CLIs use when a provider usage or rate limit stops them.
 # Matched case-insensitively against the agent's own error text only.
 RATE_LIMIT_PATTERNS = (
     r"usage limit",
@@ -40,6 +40,9 @@ RATE_LIMIT_PATTERNS = (
     r"\b429\b",
     r"quota exceeded",
     r"insufficient_quota",
+    r"out of credits",
+    r"insufficient credits",
+    r"low credit balance",
 )
 _RATE_LIMIT_RE = re.compile("|".join(RATE_LIMIT_PATTERNS), re.IGNORECASE)
 
@@ -116,6 +119,10 @@ class CliAgentAdapter(AgentAdapter):
         """
         return {}
 
+    def reported_failure(self, parsed: ParsedOutput, result: CommandResult) -> bool:
+        """Whether the CLI reported a failure even though it exited 0. Default: False."""
+        return False
+
     # -- AgentAdapter ---------------------------------------------------------
 
     def get_version(self, runner: CommandRunner) -> str | None:
@@ -166,6 +173,7 @@ class CliAgentAdapter(AgentAdapter):
         return AgentRunResult(
             exit_code=res.exit_code,
             timed_out=res.timed_out,
+            reported_failure=self.reported_failure(parsed, res),
             started_at=started,
             finished_at=finished,
             command=self.redact(command, task),

@@ -58,14 +58,20 @@ host when the trial container is created.
 ### Defaults per agent
 
 Each adapter supplies these through `default_auth(mode)`. They were checked
-against each CLI's official documentation and its pinned version (2026-11-13).
-You can override any of them per agent in the experiment file.
+against each CLI's official documentation and its pinned version (2026-11-13;
+Amp on 2026-11-21). You can override any of them per agent in the experiment
+file.
 
 | Agent | Subscription | API key |
 | --- | --- | --- |
 | Claude Code | env `CLAUDE_CODE_OAUTH_TOKEN` (create with `claude setup-token`; valid one year) | env `ANTHROPIC_API_KEY` |
 | Codex CLI | file `~/.codex/auth.json` (created by `codex login`, ChatGPT plan) | env `CODEX_API_KEY` (read directly by `codex exec`) |
 | OpenCode | file `~/.local/share/opencode/auth.json` (created by `opencode auth login`) | env named by the adapter option `api_key_env`, default `ANTHROPIC_API_KEY` |
+| Amp | **not supported** | env `AMP_API_KEY` (an access token from Amp Settings, or a service account's key) |
+
+Amp has no subscription/login-file mode: `amp login` stores a short-lived
+session token that the CLI cannot refresh from an environment variable, so an
+Amp experiment must use `auth_mode: api_key`.
 
 Only the variables for the chosen mode are passed into the container. That
 matters for Claude Code, where `ANTHROPIC_API_KEY` would otherwise take

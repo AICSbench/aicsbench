@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ai_benchmark.models.enums import AuthMode, ComparisonDimension, ToolingMode, TrialStatus
 from ai_benchmark.models.metrics import Metric, TrialMetrics
 
-_PROVIDER_MODEL_HARNESSES = frozenset({"opencode"})
+_PROVIDER_MODEL_HARNESSES = frozenset({"amp", "opencode"})
 """Harnesses whose model IDs are ``provider/model``; their labels drop the provider."""
 
 _HARNESS_PROVIDERS = {"claude": "anthropic", "codex": "openai"}
@@ -54,11 +54,15 @@ class AgentRecord(BaseModel):
     def default_provider(name: str, model: str | None) -> str | None:
         """The provider a direct run used: the harness's vendor, or the model's prefix.
 
-        OpenCode's model IDs are ``provider/model``, so its provider comes from
-        the prefix. None when it cannot be told (e.g. OpenCode without a model).
+        OpenCode's and Amp's model IDs are ``provider/model``, so their provider
+        comes from the prefix. An Amp mode (``low``, ``medium``, ``high``,
+        ``ultra``) is a routed configuration, not a model, so its provider is
+        Amp's router. None when it cannot be told (e.g. OpenCode without a model).
         """
         if name in _HARNESS_PROVIDERS:
             return _HARNESS_PROVIDERS[name]
+        if name == "amp" and model and "/" not in model:
+            return "amp"
         if name in _PROVIDER_MODEL_HARNESSES and model:
             provider, separator, rest = model.partition("/")
             if provider and separator and rest:
