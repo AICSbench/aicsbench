@@ -58,14 +58,16 @@ host when the trial container is created.
 ### Defaults per agent
 
 Each adapter supplies these through `default_auth(mode)`. They were checked
-against each CLI's official documentation and its pinned version (2026-11-13).
-You can override any of them per agent in the experiment file.
+against each CLI's official documentation and its pinned version (2026-11-13;
+`agy` was added on 2026-11-22). You can override any of them per agent in the
+experiment file.
 
 | Agent | Subscription | API key |
 | --- | --- | --- |
 | Claude Code | env `CLAUDE_CODE_OAUTH_TOKEN` (create with `claude setup-token`; valid one year) | env `ANTHROPIC_API_KEY` |
 | Codex CLI | file `~/.codex/auth.json` (created by `codex login`, ChatGPT plan) | env `CODEX_API_KEY` (read directly by `codex exec`) |
 | OpenCode | file `~/.local/share/opencode/auth.json` (created by `opencode auth login`) | env named by the adapter option `api_key_env`, default `ANTHROPIC_API_KEY` |
+| Google Antigravity (`agy`) | **not supported** (interactive/keyring sign-in is out of scope) | env `GEMINI_API_KEY`; the image sets `modelProvider: gemini` in `~/.gemini/antigravity-cli/settings.json` |
 
 Only the variables for the chosen mode are passed into the container. That
 matters for Claude Code, where `ANTHROPIC_API_KEY` would otherwise take

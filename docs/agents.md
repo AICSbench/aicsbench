@@ -1,13 +1,15 @@
 # Built-in agent adapters
 
 Each adapter installs a **pinned** CLI version into the agent image layer (on
-the platform's pinned Node.js) and runs it once per trial, non-interactively,
-in the workspace. Flags and output formats below were checked against the
-official docs and against the pinned CLI itself (`--help` and its output) on
-2026-11-13. Bumping a version means re-checking this page.
+the platform's pinned Node.js where the CLI needs it) and runs it once per
+trial, non-interactively, in the workspace. Flags and output formats below were
+checked against the official docs and against the pinned CLI itself (`--help`
+and its output) on 2026-11-13; `agy` was checked on 2026-11-22. Bumping a
+version means re-checking this page.
 
-In reports and comparisons the adapter name (`claude`, `codex`, `commandcode`, `opencode`) is
-the **harness**, and its pinned CLI version is the **harness version**.
+In reports and comparisons the adapter name (`claude`, `codex`, `commandcode`,
+`agy`, `opencode`) is the **harness**, and its pinned CLI version is the
+**harness version**.
 
 | | Claude Code | Codex CLI | OpenCode |
 | --- | --- | --- | --- |
@@ -59,9 +61,59 @@ The adapter reports input, cached input, and output tokens from the final
 result. Cost, reasoning tokens, turn count, and the actual model are left
 unavailable. Errors before inference do not turn missing metrics into zeros.
 
+## Google Antigravity (`agy`)
+
+Select `agy` (or `agy:<model>` to pin the requested model). The trial image
+installs the official Linux CLI **1.5.14** from the published tarball, verifies
+its SHA-512 against the release manifest before extracting it, and runs it
+headlessly with `--print` and `--output-format stream-json`. The pinned build
+supports Linux x86_64 and ARM64 (glibc); any other architecture fails the image
+build. The binary is root-owned in `/usr/local/bin`, outside the agent user's
+home, so a background self-update cannot replace the pinned build.
+
+API-key auth only. Put `GEMINI_API_KEY` in the host environment (the config
+names the variable, never the value) and run with `auth_mode: api_key`. The
+image writes `modelProvider: gemini` to
+`/home/agent/.gemini/antigravity-cli/settings.json`; the key is injected per
+trial and never baked into the image or exported. Interactive sign-in,
+subscription auth, and remote agents are out of scope for this adapter.
+
+Choose a model with `agy models`; the slugs include the effort level, for
+example `gemini-3.8-flash-medium`. `reasoning_effort` maps to `--effort`
+(`low|medium|high|xhigh|max`); the CLI rejects a level the model does not
+support, and an unknown `--model` exits non-zero with status `ERROR` instead of
+falling back. See `examples/agy-api-key.yaml`.
+
+The standard setup pins the built-in `default` agent, disables slash-command
+and skill expansion, denies MCP tools (`mcp(*)`), and installs no plugins or
+custom agents. `--dangerously-skip-permissions` auto-approves tool calls
+because the trial container is the isolation boundary: the CLI runs as a
+non-root user with no Docker socket, a per-trial workspace and network, and
+credentials injected per trial. The runner enforces the task timeout; the
+CLI's `--print-timeout` is left unlimited.
+
+| Metric | Antigravity |
+| --- | --- |
+| Input / cached / output tokens | yes, from the terminal `result.usage` |
+| Reasoning tokens | yes (`thinking_tokens`, reported separately) |
+| Cost | **unavailable** |
+| Turns | `num_turns` (user turns, not agentic turns) |
+| Model actually used | **unavailable** (the `init` event echoes the requested model) |
+| Usage / rate limits | terminal `status` + `error`; structured `AGY_ERROR` (HTTP 429 / `RESOURCE_EXHAUSTED`) |
+
+Token accounting: `total_tokens` is the CLI's reported total; in the pinned
+samples it is `input_tokens + output_tokens`. Cache reads are included in
+`input_tokens`, and thinking tokens are reported separately without being
+added to the total. Counts are recorded under the `gemini` accounting scheme.
+A failed run before inference reports a zeroed usage object; the adapter
+records that as unavailable, not as zero usage.
+
 ## Not yet supported
 
 - MCP servers (`best_ecosystem` tooling). Claude Code runs with
-  `--strict-mcp-config`, so no MCP server is loaded in any mode yet.
+  `--strict-mcp-config`, so no MCP server is loaded in any mode yet. `agy`
+  denies all MCP tools with `mcp(*)`.
+- Antigravity subscription/account auth, custom endpoints, and remote agents.
+  This adapter is API-key only.
 - Checking credentials before a trial: it would cost a model call, so a bad
   credential shows up as an `agent_error` on the first trial.
