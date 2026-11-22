@@ -83,7 +83,10 @@ applied. The estimate is separate from reported cost and is unavailable when
 the exact model ID (or an unambiguous bare ID), a base rate, or the token counts
 are unknown, or when the harness's token accounting is unsupported. Exact IDs
 and variants are priced separately (for example `:batch` and `-1017`); aliases
-are not guessed. Refresh the snapshot from the public Models API with
+are not guessed. Grouped reports also show estimated API cost per pass: the
+estimated cost of all priced trials, including failures, divided by every pass.
+It is n/a when there is no pass or no priced trial, and marked partial when some
+trials are unpriced. Refresh the snapshot from the public Models API with
 `python scripts/refresh_openrouter_models.py`.
 
 The **Refresh OpenRouter pricing** GitHub Actions workflow also checks the

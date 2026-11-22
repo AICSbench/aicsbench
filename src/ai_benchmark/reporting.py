@@ -178,11 +178,18 @@ def render_report(
         values = estimates.get(row.value, [])
         cards = {card for _, card in values}
         used_cards.update(cards)
+        total = sum(amount for amount, _ in values) if values else None
+        # All priced trials, including failures, fund each pass. A pass whose
+        # own trial is unpriced still counts in the denominator.
+        per_pass = total / row.passed if total is not None and row.passed else None
         data.append(
             {
                 **asdict(row),
-                "estimated_api_cost_usd": sum(amount for amount, _ in values) if values else None,
+                "estimated_api_cost_usd": total,
                 "estimated_api_cost_samples": len(values),
+                "estimated_api_cost_per_pass_usd": per_pass,
+                "estimated_api_cost_per_pass_partial": per_pass is not None
+                and len(values) < row.trials,
                 "estimated_api_cost_rate_card": "; ".join(sorted({c.label for c in cards})) or None,
                 "estimated_api_cost_price_source": "; ".join(sorted({c.source for c in cards}))
                 or None,
@@ -202,8 +209,8 @@ def render_report(
         "",
         "| Group | Passed/trials | Rate limited | Timed | Mean time (s) | "
         "Std dev (s) | Mean cost (USD) | Cost samples | Estimated API cost (USD, total) | "
-        "Estimated trials | Confidence |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "Estimated API cost per pass (USD) | Estimated trials | Confidence |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for row, group_data in zip(rows, data, strict=True):
         label = _markdown_label(row.value)
@@ -212,11 +219,19 @@ def render_report(
         cost = f"{row.mean_cost_usd:.4f}" if row.mean_cost_usd is not None else "n/a"
         total = group_data["estimated_api_cost_usd"]
         estimate_text = f"{total:.6f}" if total is not None else "n/a"
+        per_pass = group_data["estimated_api_cost_per_pass_usd"]
+        if per_pass is None:
+            per_pass_text = "n/a"
+        else:
+            per_pass_text = f"{per_pass:.6f}"
+            if group_data["estimated_api_cost_per_pass_partial"]:
+                per_pass_text += " (partial)"
         lines.append(
             f"| {label} | "
             f"{row.passed}/{row.trials} | {row.rate_limited} | "
             f"{row.timed} | {mean} | {dev} | {cost} | {row.cost_samples} | "
-            f"{estimate_text} | {group_data['estimated_api_cost_samples']}/{row.trials} | "
+            f"{estimate_text} | {per_pass_text} | "
+            f"{group_data['estimated_api_cost_samples']}/{row.trials} | "
             f"{'low' if row.low_confidence else 'ok'} |"
         )
     lines.extend(["", "## Success rate", "", "| Group | Success |", "| --- | --- |"])
@@ -235,6 +250,9 @@ def render_report(
             "cache-write and separate internal-reasoning rates, and non-token fees are not "
             "applied. Totals include all priced trials, even failures; unpriced trials are not "
             "counted as zero.",
+            "Estimated API cost per pass divides that total by every pass, including passes whose "
+            "own trial is unpriced. It is n/a without a pass or a priced trial, and marked partial "
+            "when some trials are unpriced.",
             "The requested model is used when the CLI does not report one. Exact IDs and "
             "variants are priced separately; aliases are not guessed.",
             *[
