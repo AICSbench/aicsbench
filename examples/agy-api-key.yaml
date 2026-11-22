@@ -1,12 +1,14 @@
 # Google Antigravity CLI (agy) with a Gemini API key.
 #
 # Choose a model slug with `agy models`. The CLI only lists models when the
-# provider is enabled and the key is set, so use the same settings the trial
-# image writes:
+# provider is enabled and the key is set. Use an isolated CLI home so this does
+# not overwrite your own settings:
 #
-#   mkdir -p ~/.gemini/antigravity-cli
-#   printf '{"modelProvider":"gemini"}\n' > ~/.gemini/antigravity-cli/settings.json
-#   GEMINI_API_KEY=... agy models
+#   tmp=$(mktemp -d)
+#   mkdir -p "$tmp/.gemini/antigravity-cli"
+#   printf '{"modelProvider":"gemini"}\n' > "$tmp/.gemini/antigravity-cli/settings.json"
+#   HOME="$tmp" GEMINI_API_KEY=... agy models
+#   rm -rf "$tmp"
 #
 # Slugs include the effort level, for example gemini-3.8-flash-medium.
 # `reasoning_effort` is optional; it maps to `--effort` and must be one of

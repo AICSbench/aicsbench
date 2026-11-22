@@ -476,10 +476,43 @@ def test_agy_rate_limit_from_structured_error(tmp_path: Path) -> None:
     assert result.raw["agy_error"]["error_code"] == 429
 
 
+def test_agy_structured_rate_limit_without_text_match(tmp_path: Path) -> None:
+    stdout = (
+        '{"event":"result","result":{"status":"ERROR","response":"",'
+        '"error":"structured failure","duration_seconds":0,"num_turns":1,'
+        '"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,'
+        '"cache_read_tokens":0,"total_tokens":0}}}\n'
+    )
+    stderr = (
+        'AGY_ERROR: {"short_error":"structured failure",'
+        '"status":"RESOURCE_EXHAUSTED","code_kind":"grpc","retryable":true}\n'
+    )
+    runner = StubRunner(stdout, exit_code=3, stderr=stderr)
+    result = AgyAdapter().run(task(tmp_path), runner)
+    assert result.stopped_by_rate_limit
+    assert result.rate_limit_events[0].message == "structured failure"
+    assert result.raw["agy_error"]["status"] == "RESOURCE_EXHAUSTED"
+
+
+def test_agy_in_band_error_is_not_success(tmp_path: Path) -> None:
+    result, _ = run(AgyAdapter(), tmp_path, "agy_error.jsonl", exit_code=0)
+    assert result.reported_failure and not result.succeeded
+    assert result.error and "invalid model selection" in result.error
+
+
 def test_agy_missing_result_is_an_error(tmp_path: Path) -> None:
     runner = StubRunner('{"event":"init","conversation_id":"x","init":{"cwd":"/workspace"}}\n')
     result = AgyAdapter().run(task(tmp_path), runner)
     assert result.error and "no terminal result event" in result.error
+    assert result.reported_failure and not result.succeeded
+    assert not result.usage.tokens.input_tokens.is_available
+
+
+def test_agy_stderr_replaces_missing_result_error(tmp_path: Path) -> None:
+    runner = StubRunner("", exit_code=0, stderr="Error: authentication required\n")
+    result = AgyAdapter().run(task(tmp_path), runner)
+    assert result.error == "Error: authentication required"
+    assert result.reported_failure and not result.succeeded
     assert not result.usage.tokens.input_tokens.is_available
 
 

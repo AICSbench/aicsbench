@@ -55,7 +55,7 @@ from ai_benchmark.agents.cli import (
 from ai_benchmark.agents.registry import register_agent
 from ai_benchmark.config.auth import AgentAuthConfig
 from ai_benchmark.config.experiment import EndpointConfig
-from ai_benchmark.environment.base import AgentImageLayer, CommandRunner
+from ai_benchmark.environment.base import AgentImageLayer, CommandResult, CommandRunner
 from ai_benchmark.errors import ConfigurationError
 from ai_benchmark.models.enums import AuthMode, MetricSource
 from ai_benchmark.models.metrics import Metric, TokenUsage, UsageMetrics
@@ -217,6 +217,10 @@ class AgyAdapter(CliAgentAdapter):
             cmd += ["--effort", task.reasoning_effort]
         return cmd
 
+    def reported_failure(self, parsed: ParsedOutput, result: CommandResult) -> bool:
+        """A terminal ERROR is a failure even if the CLI process exits 0."""
+        return bool(parsed.errors)
+
     # -- output ---------------------------------------------------------------
 
     def parse_output(self, stdout: str) -> ParsedOutput:
@@ -337,7 +341,9 @@ class AgyAdapter(CliAgentAdapter):
                         fatal=True,
                     )
                 )
-        elif result.error is None and not result.timed_out and result.exit_code not in (0, None):
+        elif not result.timed_out and (
+            result.error is None or result.error.startswith("no terminal result event")
+        ):
             last = _last_error_line(stderr)
             if last:
                 result.error = last[:1000]
