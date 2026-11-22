@@ -11,8 +11,8 @@ environment_notes: |
     pins the compiler, TypeScript, tsx, pg and @types/pg; there is no starter app.
   - Run the local compiler with npx --no-install glyph. Its offline language reference
     is available via npx --no-install glyph llms.
-  - PostgreSQL 16 runs at postgres:5432. Use pg with DATABASE_URL and apply SQL
-    migrations at startup; std/http does not provide an ORM or migration tool.
+  - PostgreSQL 16 runs at postgres:5432. Use the installed pg driver with DATABASE_URL
+    for persistence and to apply SQL migrations at startup. psql is not installed.
 setup_commands:
   - [sh, -lc, "npm init -y >/dev/null && npm install --no-audit --no-fund --save-exact @glyphlang/glyph@0.1.166 typescript@5.9.3 tsx@4.23.15 pg@8.23.1 @types/pg@8.23.1 && ./node_modules/.bin/glyph --version"]
 version_probes:
