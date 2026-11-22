@@ -112,6 +112,8 @@ def test_model_key_strips_provider_only_for_provider_model_harnesses() -> None:
     assert record("opencode", "openai/gpt-6-luna").model_key == "gpt-6-luna"
     assert record("opencode", "openrouter/openai/gpt-6-luna").model_key == "openai/gpt-6-luna"
     assert record("claude", "Claude-Opus-5-5").model_key == "claude-opus-5-5"
+    assert record("amp", "zhipuai/glm-5.3-flash").model_key == "glm-5.3-flash"
+    assert record("amp", "high").model_key == "high"
 
 
 def test_model_filter_uses_resolved_model(tmp_path: Path) -> None:

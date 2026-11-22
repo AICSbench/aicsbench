@@ -59,8 +59,8 @@ host when the trial container is created.
 
 Each adapter supplies these through `default_auth(mode)`. They were checked
 against each CLI's official documentation and its pinned version (2026-11-13;
-`agy` was added on 2026-11-22). You can override any of them per agent in the
-experiment file.
+Amp on 2026-11-21, `agy` on 2026-11-22). You can override any of them per agent
+in the experiment file.
 
 | Agent | Subscription | API key |
 | --- | --- | --- |
@@ -68,6 +68,11 @@ experiment file.
 | Codex CLI | file `~/.codex/auth.json` (created by `codex login`, ChatGPT plan) | env `CODEX_API_KEY` (read directly by `codex exec`) |
 | OpenCode | file `~/.local/share/opencode/auth.json` (created by `opencode auth login`) | env named by the adapter option `api_key_env`, default `ANTHROPIC_API_KEY` |
 | Google Antigravity (`agy`) | **not supported** (official headless auth needs an interactive sign-in plus a Linux keyring; the container file-token path is not read back) | env `GEMINI_API_KEY`; the image sets `modelProvider: gemini` in `~/.gemini/antigravity-cli/settings.json` |
+| Amp | **not supported** | env `AMP_API_KEY` (an access token from Amp Settings, or a service account's key) |
+
+Amp has no subscription/login-file mode: `amp login` stores a short-lived
+session token that the CLI cannot refresh from an environment variable, so an
+Amp experiment must use `auth_mode: api_key`.
 
 Only the variables for the chosen mode are passed into the container. That
 matters for Claude Code, where `ANTHROPIC_API_KEY` would otherwise take

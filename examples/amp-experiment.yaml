@@ -1,0 +1,24 @@
+# Amp on the URL-shortener task. Run with:
+#   export AMP_API_KEY=sgamp_...   # an Amp access token; never commit it
+#   aicsbench run --config examples/amp-experiment.yaml --dry-run
+#   aicsbench run --config examples/amp-experiment.yaml
+#
+# `model` takes Amp's required provider/model form, or a built-in mode
+# (low, medium, high, ultra). A mode is a routed configuration, not a model:
+# results record the requested mode and leave the actual model unavailable.
+task: url-shortener-api
+agents:
+  - agent: amp
+    model: zhipuai/glm-5.3-flash
+    # model: high
+    # reasoning_effort: high
+stacks: [fastapi]
+trials: 1
+# Amp is API-key only; subscription auth is rejected before the run starts.
+auth_mode: api_key
+tooling:
+  mode: standard
+randomize_order: true
+seed: 42
+labels:
+  purpose: amp-smoke

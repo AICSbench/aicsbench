@@ -24,4 +24,4 @@ __all__ = [
 ]
 
 # Built-in adapters register themselves in ``default_registry`` on import.
-from ai_benchmark.agents import agy, claude_code, codex, commandcode, opencode  # noqa: E402, F401
+from ai_benchmark.agents import agy, amp, claude_code, codex, commandcode, opencode  # noqa: E402, F401

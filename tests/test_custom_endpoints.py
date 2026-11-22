@@ -1180,3 +1180,7 @@ def test_default_provider_of_direct_runs() -> None:
     assert AgentRecord.default_provider("codex", None) == "openai"
     assert AgentRecord.default_provider("opencode", "openai/gpt-6-luna") == "openai"
     assert AgentRecord.default_provider("opencode", None) is None
+    assert AgentRecord.default_provider("amp", "zhipuai/glm-5.3-flash") == "zhipuai"
+    # A built-in mode is a routed configuration, not a model: Amp is the provider.
+    assert AgentRecord.default_provider("amp", "high") == "amp"
+    assert AgentRecord.default_provider("amp", None) is None

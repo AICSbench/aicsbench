@@ -228,6 +228,138 @@ def test_cli_estimates_luna_cost_with_partial_coverage(tmp_path: Path) -> None:
     assert group["estimated_api_cost_usd"] == pytest.approx(0.0144)
 
 
+def test_report_cost_per_pass_includes_priced_failures() -> None:
+    passed_expensive = _priced_trial("gpt-6-luna", input_tokens=2_000_000, cached=0, output=0)
+    passed_cheap = _priced_trial("gpt-6-luna", input_tokens=1_000_000, cached=0, output=0)
+    failed = _priced_trial("gpt-6-luna", input_tokens=3_000_000, cached=0, output=0)
+    for item, trial_id in (
+        (passed_expensive, "passed-expensive"),
+        (passed_cheap, "passed-cheap"),
+        (failed, "failed"),
+    ):
+        item.trial_id = trial_id
+    failed.status = TrialStatus.FAILED
+    passed_expensive.metrics.usage.cost = Metric[float].of(0.11, MetricSource.AGENT_REPORTED)
+    passed_cheap.metrics.usage.cost = Metric[float].of(0.13, MetricSource.AGENT_REPORTED)
+    trials = [passed_expensive, passed_cheap, failed]
+    rows = compare_trials(trials, ComparisonDimension.STACK)
+
+    group = json.loads(render_report(rows, ComparisonDimension.STACK, "json", trials))["groups"][0]
+    assert (group["passed"], group["trials"]) == (2, 3)
+    assert group["estimated_api_cost_usd"] == pytest.approx(0.60)
+    assert group["estimated_api_cost_samples"] == 3
+    assert group["estimated_api_cost_per_pass_usd"] == pytest.approx(0.30)
+    assert group["estimated_api_cost_per_pass_partial"] is False
+    assert (
+        group["estimated_api_cost_rate_card"]
+        == f"openrouter/openai/gpt-6-luna/base@{SNAPSHOT_TIME}"
+    )
+    # Recorded cost keeps its own mean and sample count.
+    assert (group["mean_cost_usd"], group["cost_samples"]) == (pytest.approx(0.12), 2)
+
+    csv_row = next(
+        csv.DictReader(io.StringIO(render_report(rows, ComparisonDimension.STACK, "csv", trials)))
+    )
+    assert float(csv_row["estimated_api_cost_per_pass_usd"]) == pytest.approx(0.30)
+    assert csv_row["estimated_api_cost_per_pass_partial"] == "False"
+    assert float(csv_row["mean_cost_usd"]) == pytest.approx(0.12)
+    assert csv_row["cost_samples"] == "2"
+
+    markdown = render_report(rows, ComparisonDimension.STACK, "markdown", trials)
+    assert "Estimated API cost per pass (USD)" in markdown
+    assert "| 0.600000 | 0.300000 | 3/3 |" in markdown
+    assert "(partial)" not in markdown
+    assert "0.1200" in markdown
+
+    # The trial-level export and its recorded cost are unchanged.
+    exported = {
+        row["trial_id"]: row for row in map(json.loads, export_trials(trials, "jsonl").splitlines())
+    }
+    assert exported["passed-expensive"]["cost_usd"] == 0.11
+    assert "estimated_api_cost_per_pass_usd" not in exported["passed-expensive"]
+
+
+def test_report_cost_per_pass_is_partial_when_a_pass_is_unpriced() -> None:
+    passed_expensive = _priced_trial("gpt-6-luna", input_tokens=2_000_000, cached=0, output=0)
+    passed_unpriced = _priced_trial("gpt-6-luna", input_tokens=1_000_000, cached=0, output=0)
+    failed = _priced_trial("gpt-6-luna", input_tokens=3_000_000, cached=0, output=0)
+    for item, trial_id in (
+        (passed_expensive, "passed-expensive"),
+        (passed_unpriced, "passed-unpriced"),
+        (failed, "failed"),
+    ):
+        item.trial_id = trial_id
+    failed.status = TrialStatus.FAILED
+    # The pass still counts in the denominator although its own cost is unknown.
+    passed_unpriced.metrics.usage.tokens.cached_input_tokens = Metric[int].unavailable()
+    trials = [passed_expensive, passed_unpriced, failed]
+    rows = compare_trials(trials, ComparisonDimension.STACK)
+
+    group = json.loads(render_report(rows, ComparisonDimension.STACK, "json", trials))["groups"][0]
+    assert (group["passed"], group["trials"]) == (2, 3)
+    assert group["estimated_api_cost_usd"] == pytest.approx(0.50)
+    assert group["estimated_api_cost_samples"] == 2
+    assert group["estimated_api_cost_per_pass_usd"] == pytest.approx(0.25)
+    assert group["estimated_api_cost_per_pass_partial"] is True
+
+    csv_row = next(
+        csv.DictReader(io.StringIO(render_report(rows, ComparisonDimension.STACK, "csv", trials)))
+    )
+    assert float(csv_row["estimated_api_cost_per_pass_usd"]) == pytest.approx(0.25)
+    assert csv_row["estimated_api_cost_per_pass_partial"] == "True"
+
+    markdown = render_report(rows, ComparisonDimension.STACK, "markdown", trials)
+    assert "| 0.500000 | 0.250000 (partial) | 2/3 |" in markdown
+
+
+def test_report_cost_per_pass_is_unavailable_without_a_pass_or_priced_trial() -> None:
+    failed = _priced_trial("gpt-6-luna", input_tokens=3_000_000, cached=0, output=0)
+    failed.status = TrialStatus.FAILED
+    rows = compare_trials([failed], ComparisonDimension.STACK)
+    report = json.loads(render_report(rows, ComparisonDimension.STACK, "json", [failed]))
+    group = report["groups"][0]
+    assert group["estimated_api_cost_usd"] == pytest.approx(0.30)
+    assert (group["estimated_api_cost_samples"], group["passed"]) == (1, 0)
+    assert group["estimated_api_cost_per_pass_usd"] is None
+    assert group["estimated_api_cost_per_pass_partial"] is False
+    markdown = render_report(rows, ComparisonDimension.STACK, "markdown", [failed])
+    assert "| 0.300000 | n/a | 1/1 |" in markdown
+    csv_row = next(
+        csv.DictReader(io.StringIO(render_report(rows, ComparisonDimension.STACK, "csv", [failed])))
+    )
+    assert csv_row["estimated_api_cost_per_pass_usd"] == ""
+
+    unpriced = _priced_trial("gpt-6-luna", input_tokens=1_000_000, cached=0, output=0)
+    unpriced.metrics.usage.tokens.cached_input_tokens = Metric[int].unavailable()
+    rows = compare_trials([unpriced], ComparisonDimension.STACK)
+    report = json.loads(render_report(rows, ComparisonDimension.STACK, "json", [unpriced]))
+    group = report["groups"][0]
+    assert group["estimated_api_cost_usd"] is None
+    assert (group["estimated_api_cost_samples"], group["passed"]) == (0, 1)
+    assert group["estimated_api_cost_per_pass_usd"] is None
+    assert group["estimated_api_cost_per_pass_partial"] is False
+    markdown = render_report(rows, ComparisonDimension.STACK, "markdown", [unpriced])
+    assert "| n/a | n/a | 0/1 |" in markdown
+
+
+def test_report_cost_per_pass_keeps_a_real_zero_estimate() -> None:
+    first = _priced_trial("gpt-6-luna", input_tokens=0, cached=0, output=0)
+    second = _priced_trial("gpt-6-luna", input_tokens=0, cached=0, output=0)
+    first.trial_id, second.trial_id = "first", "second"
+    trials = [first, second]
+    rows = compare_trials(trials, ComparisonDimension.STACK)
+    group = json.loads(render_report(rows, ComparisonDimension.STACK, "json", trials))["groups"][0]
+    assert group["estimated_api_cost_usd"] == 0
+    assert group["estimated_api_cost_per_pass_usd"] == 0
+    assert group["estimated_api_cost_per_pass_partial"] is False
+    csv_row = next(
+        csv.DictReader(io.StringIO(render_report(rows, ComparisonDimension.STACK, "csv", trials)))
+    )
+    assert float(csv_row["estimated_api_cost_per_pass_usd"]) == 0
+    markdown = render_report(rows, ComparisonDimension.STACK, "markdown", trials)
+    assert "| 0.000000 | 0.000000 | 2/2 |" in markdown
+
+
 def test_report_uses_openrouter_snapshot_rates() -> None:
     glm = trial("r1", "glm", "commandcode", TrialStatus.PASSED)
     glm.agent.requested_model = glm.agent.resolved_model = "z-ai/glm-5.3-flash"
