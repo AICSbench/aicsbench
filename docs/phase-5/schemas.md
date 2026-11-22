@@ -235,10 +235,11 @@ and these keys added only in the export:
 - `/runs/<run_id>/` pages have no sections; their trial rows are the
   `data/trials.json` rows with that `run_id`, and `params.bundle` is the
   bundle's folder in the data repository.
-- `rows` are `dataclasses.asdict(comparison.ComparisonRow)` plus
+- `rows` are the `comparison.ComparisonRow` fields in the site `Row` model plus
   `success_rate` (`passed / trials`), in the order `compare_trials` returns
-  them. A `null` mean (no timed or costed trials) renders as "unavailable",
-  never `0`.
+  them. The CLI-only timing spread fields (`median_seconds`, `min_seconds`,
+  `max_seconds`) are omitted so the site schema stays unchanged. A `null` mean
+  (no timed or costed trials) renders as "unavailable", never `0`.
 - `refused` is the `compare_trials` error message when a section cannot be
   compared. It is shown instead of a table. Normally the "per ..." splits
   below prevent it.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from statistics import mean, stdev
+from statistics import mean, median, stdev
 
 from ai_benchmark.models.enums import ComparisonDimension, TrialStatus
 from ai_benchmark.models.results import TrialResult
@@ -81,6 +81,9 @@ class ComparisonRow:
     timed: int
     mean_seconds: float | None
     stdev_seconds: float | None
+    median_seconds: float | None
+    min_seconds: float | None
+    max_seconds: float | None
     mean_cost_usd: float | None
     cost_samples: int
     low_confidence: bool
@@ -243,6 +246,9 @@ def compare_trials(
                 timed=len(times),
                 mean_seconds=mean(times) if times else None,
                 stdev_seconds=stdev(times) if len(times) > 1 else None,
+                median_seconds=median(times) if times else None,
+                min_seconds=min(times) if times else None,
+                max_seconds=max(times) if times else None,
                 mean_cost_usd=mean(costs) if costs else None,
                 cost_samples=len(costs),
                 low_confidence=len(group) < min_trials,
