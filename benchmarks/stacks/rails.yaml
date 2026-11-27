@@ -8,6 +8,7 @@ dockerfile: rails/Dockerfile
 environment_notes: |
   - Rails 8.0.2 is available via the rails command. Create an API-only project.
   - PostgreSQL 16 runs at postgres:5432. Use DATABASE_URL for the connection.
+  - The acceptance runner connects on the trial network using HTTP hostname `app`. Add `config.hosts << "app"` to the Rails environment used by `start.sh` if host authorization is enabled. Keep host authorization enabled if it is already active.
 env:
   BUNDLE_PATH: /home/agent/.bundle/gems
   DATABASE_URL: postgresql://bench:bench@postgres:5432/bench
