@@ -53,6 +53,7 @@ supported_stacks:
   - aspnet-core
   - axum
   - nestjs
+  - glyph
 
 acceptance_tests:
   suite: acceptance/

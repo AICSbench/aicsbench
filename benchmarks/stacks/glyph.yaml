@@ -1,0 +1,31 @@
+id: glyph
+language: glyph
+language_version: "0.1.166"
+framework: std/http
+framework_version: "0.1.166"
+description: Experimental Glyph (chadetov/glyph) with std/http, Node.js and PostgreSQL.
+# Glyph's Linux ARM64 binary requires glibc 2.39 or newer.
+image: node:26.13.1-trixie-slim
+environment_notes: |
+  - Write the API in Glyph (.glyph) using its bundled std/http. The starter package.json
+    pins the compiler, TypeScript, tsx, pg and @types/pg; there is no starter app.
+  - Run the local compiler with npx --no-install glyph. Its offline language reference
+    is available via npx --no-install glyph llms.
+  - PostgreSQL 16 runs at postgres:5432. Use the installed pg driver with DATABASE_URL
+    for persistence and to apply SQL migrations at startup. psql is not installed.
+setup_commands:
+  - [sh, -lc, "npm init -y >/dev/null && npm install --no-audit --no-fund --save-exact @glyphlang/glyph@0.1.166 typescript@5.9.3 tsx@4.23.15 pg@8.23.1 @types/pg@8.23.1 && ./node_modules/.bin/glyph --version"]
+version_probes:
+  language: [sh, -lc, "./node_modules/.bin/glyph --version | sed 's/^glyph //'"]
+  framework: [sh, -lc, "node -p \"require('@glyphlang/glyph/package.json').version\""]
+  node: [sh, -lc, "node -p process.versions.node"]
+  pg: [sh, -lc, "node -p \"require('pg/package.json').version\""]
+env:
+  DATABASE_URL: postgresql://bench:bench@postgres:5432/bench
+services:
+  - name: postgres
+    image: postgres:16.4-alpine
+    env: {POSTGRES_USER: bench, POSTGRES_PASSWORD: bench, POSTGRES_DB: bench}
+    ports: [5432]
+    healthcheck: [pg_isready, -U, bench]
+resources: {cpus: 2, memory: 4g}
