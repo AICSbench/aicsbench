@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_benchmark.config.settings import PlatformSettings
+from aicsbench.config.settings import PlatformSettings
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 

@@ -21,7 +21,7 @@ against `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`.
 
 ### `submission.json`
 
-A pydantic model `SubmissionInfo` in `src/ai_benchmark/submission/models.py`,
+A pydantic model `SubmissionInfo` in `src/aicsbench/submission/models.py`,
 `extra="forbid"`:
 
 | Field | Type | Meaning |
@@ -67,7 +67,7 @@ str | None = None` (optional, so older manifests still load).
   is `submit`'s job, and its test greps the bundle for the test's temp
   path.
 - Secret scan (also run by the validator), defined in
-  `src/ai_benchmark/submission/secrets.py`. It fails when either:
+  `src/aicsbench/submission/secrets.py`. It fails when either:
   - a string value, or a JSON key, matches a pattern in `SECRET_PATTERNS`:
     `sk-[A-Za-z0-9_-]{20,}`, `sk-ant-[A-Za-z0-9_-]{20,}`, `gh[pousr]_[A-Za-z0-9]{30,}`,
     `xox[baprs]-[A-Za-z0-9-]{10,}`, `-----BEGIN [A-Z ]*PRIVATE KEY-----`,
@@ -100,7 +100,7 @@ str | None = None` (optional, so older manifests still load).
 
 `validate_bundle(path, catalog, *, against: Path | None = None,
 check_catalog: bool = True) -> list[Problem]` in
-`src/ai_benchmark/submission/validate.py`; `Problem` has `code`, `path`,
+`src/aicsbench/submission/validate.py`; `Problem` has `code`, `path`,
 `message`. An empty list means valid. The CLI command
 `aicsbench validate-submission PATH... [--against DIR] [--no-catalog-check]`
 prints problems and exits 1 if any.

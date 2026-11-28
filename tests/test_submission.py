@@ -12,12 +12,12 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ai_benchmark.cli.app import app
-from ai_benchmark.config.loader import SpecCatalog
-from ai_benchmark.models.results import RunManifest
-from ai_benchmark.submission.secrets import find_secrets, scan_text
-from ai_benchmark.submission.suite import EMPTY_SHA256, suite_sha256
-from ai_benchmark.submission.validate import validate_bundle
+from aicsbench.cli.app import app
+from aicsbench.config.loader import SpecCatalog
+from aicsbench.models.results import RunManifest
+from aicsbench.submission.secrets import find_secrets, scan_text
+from aicsbench.submission.suite import EMPTY_SHA256, suite_sha256
+from aicsbench.submission.validate import validate_bundle
 
 from .conftest import REPO_ROOT
 
@@ -526,7 +526,7 @@ def test_shipped_suite_hashes_are_unchanged(catalog: SpecCatalog) -> None:
 
 
 def _suiteless_task():
-    from ai_benchmark.config.task import BenchmarkSpec
+    from aicsbench.config.task import BenchmarkSpec
 
     return BenchmarkSpec.model_validate(
         {
@@ -697,7 +697,7 @@ def test_log_archive_scans_json_member_with_oversized_integer(
 def test_log_archive_rejects_member_over_limit(
     catalog: SpecCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("ai_benchmark.submission.validate.LOG_TOTAL_LIMIT_BYTES", 10)
+    monkeypatch.setattr("aicsbench.submission.validate.LOG_TOTAL_LIMIT_BYTES", 10)
     bundle = _log_bundle(catalog, tmp_path)
     _add_log(bundle, "trial-001", "x" * 20)
     problems = validate_bundle(bundle, catalog)
@@ -708,7 +708,7 @@ def test_log_archive_rejects_member_over_limit(
 def test_log_archive_rejects_cumulative_size_over_limit(
     catalog: SpecCatalog, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("ai_benchmark.submission.validate.LOG_TOTAL_LIMIT_BYTES", 10)
+    monkeypatch.setattr("aicsbench.submission.validate.LOG_TOTAL_LIMIT_BYTES", 10)
     bundle = _log_bundle(catalog, tmp_path)
     archive = bundle / "logs" / "trial-001.tar.gz"
     archive.parent.mkdir(exist_ok=True)

@@ -1,0 +1,890 @@
+"""Benchmark orchestrator.
+
+The orchestrator wires together the spec catalog, agent registry, execution
+environment, workspace manager and result store. It only depends on their
+interfaces and contains no agent- or stack-specific logic.
+
+Trials start in the planned (randomized) order. Each one gets a
+fresh workspace and a fresh container; the timer covers only the agent run;
+acceptance tests run afterwards in a separate tester container.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import platform
+import shlex
+import subprocess
+import uuid
+from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from pathlib import Path
+
+from packaging.version import InvalidVersion, Version
+from pydantic import BaseModel, ConfigDict, Field
+
+from aicsbench import __version__
+from aicsbench.agents.base import AgentAdapter, AgentAvailability, AgentRunResult, AgentTask
+from aicsbench.agents.registry import AgentRegistry
+from aicsbench.config.auth import AgentAuthConfig
+from aicsbench.config.experiment import AgentSelection, EndpointConfig, ExperimentConfig
+from aicsbench.config.loader import SpecCatalog
+from aicsbench.config.settings import PlatformSettings
+from aicsbench.config.stack import StackSpec
+from aicsbench.config.task import BenchmarkSpec
+from aicsbench.environment.base import (
+    CommandRunner,
+    EnvironmentHandle,
+    ExecutionEnvironment,
+    ImageInfo,
+    Mount,
+)
+from aicsbench.environment.workspace import WorkspaceManager
+from aicsbench.errors import (
+    AgentExecutionError,
+    ConfigurationError,
+    ExecutionEnvironmentError,
+    PlanningError,
+)
+from aicsbench.models.enums import AuthMode, MetricSource, TrialStatus
+from aicsbench.models.metrics import Metric, QualityMetrics, TokenUsage, UsageMetrics
+from aicsbench.models.results import (
+    AgentRecord,
+    EnvironmentRecord,
+    RunManifest,
+    ToolingRecord,
+    TrialResult,
+)
+from aicsbench.orchestrator.code_metrics import (
+    discard_untracked,
+    snapshot_baseline,
+    snapshot_result,
+)
+from aicsbench.orchestrator.junit import parse_junit
+from aicsbench.orchestrator.plan import ExperimentPlan, PlannedTrial, build_plan
+from aicsbench.orchestrator.policy import apply_auth_policy
+from aicsbench.orchestrator.timing import Stopwatch, utcnow
+from aicsbench.progress import AgentHeartbeat, format_duration
+from aicsbench.storage.base import ResultStore
+from aicsbench.submission.suite import suite_sha256
+
+log = logging.getLogger(__name__)
+
+TrialCallback = Callable[[TrialResult], None]
+
+_VERSION_PROBE_TIMEOUT_SECONDS = 30
+# Start of the note recorded in a trial's error when the installed framework is not
+# the selected version; the site marks such trials as "version changed during trial".
+VERSION_CHANGED_NOTE = "version changed during trial"
+
+
+def _same_version(stack: StackSpec, installed: str, selected: str) -> bool:
+    """Whether ``installed`` is the ``selected`` release.
+
+    Python packages report their version in PEP 440 normal form, so a selected
+    '0.100.0-beta.1' is installed as '0.100.0b1'; compare those as releases.
+    """
+    if stack.language == "python":
+        try:
+            return Version(installed) == Version(selected)
+        except InvalidVersion:
+            pass
+    return installed == selected
+
+
+class PreflightIssue(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    severity: str = Field(pattern="^(error|warning)$")
+    subject: str
+    message: str
+
+
+class RunSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    total: int
+    by_status: dict[str, int] = Field(default_factory=dict)
+    trial_ids: list[str] = Field(default_factory=list)
+
+
+def new_run_id() -> str:
+    return f"{utcnow():%Y%m%dT%H%M%SZ}-{uuid.uuid4().hex[:6]}"
+
+
+class BenchmarkOrchestrator:
+    """Runs isolated trials with a bounded concurrency limit."""
+
+    def __init__(
+        self,
+        settings: PlatformSettings,
+        catalog: SpecCatalog,
+        registry: AgentRegistry,
+        environment: ExecutionEnvironment,
+        store: ResultStore,
+        workspaces: WorkspaceManager | None = None,
+    ) -> None:
+        self.settings = settings
+        self.catalog = catalog
+        self.registry = registry
+        self.environment = environment
+        self.store = store
+        self.workspaces = workspaces or WorkspaceManager(settings.workspaces_dir)
+
+    # -- planning (implemented) -------------------------------------------
+
+    def plan(self, config: ExperimentConfig, run_id: str | None = None) -> ExperimentPlan:
+        """Resolve the task and stacks and expand the config into ordered trials."""
+        task = self.catalog.get_task(config.task)
+        stacks = {s: self.catalog.get_stack(s) for s in config.stacks}
+        return build_plan(config, task, stacks, run_id or new_run_id())
+
+    # -- pre-flight --------------------------------------------------------
+
+    def preflight(self, plan: ExperimentPlan) -> list[PreflightIssue]:
+        """Check each agent is registered, supports the auth mode and has its credentials.
+
+        Credentials are checked by name/path only, without reading values.
+        """
+        issues: list[PreflightIssue] = []
+        mode = plan.auth_mode
+        selections = {t.agent.key: t.agent for t in plan.trials}
+        for key in sorted(selections):
+            selection = selections[key]
+
+            def error(message: str, subject: str = key) -> PreflightIssue:
+                return PreflightIssue(severity="error", subject=subject, message=message)
+
+            auth = selection.auth
+            if selection.agent not in self.registry:
+                issues.append(error("no adapter registered"))
+            else:
+                adapter = self.registry.create(selection.agent, selection.options)
+                if mode not in adapter.capabilities().supported_auth_modes:
+                    issues.append(error(f"does not support auth mode '{mode.value}'"))
+                    continue
+                auth = self.resolve_auth(selection, mode)
+            if auth is not None:
+                issues.extend(error(problem) for problem in auth.missing())
+        defaults = sorted(k for k, s in selections.items() if s.model is None)
+        if defaults:
+            issues.append(
+                PreflightIssue(
+                    severity="warning",
+                    subject="model",
+                    message=f"no model set for {', '.join(defaults)}: the agent's default "
+                    "model is used, which makes model comparisons less reliable",
+                )
+            )
+        if mode is AuthMode.SUBSCRIPTION:
+            issues.append(
+                PreflightIssue(
+                    severity="warning",
+                    subject="auth",
+                    message="subscription mode: cost is recorded as unavailable, and trials "
+                    "that hit a usage limit are flagged",
+                )
+            )
+        return issues
+
+    def resolve_auth(self, selection: AgentSelection, mode: AuthMode) -> AgentAuthConfig:
+        """The selection's explicit auth, else the adapter's default for ``mode``.
+
+        A custom endpoint's gateway credential is added on top: it replaces the
+        adapter's provider default (Claude Code must not receive
+        ``ANTHROPIC_API_KEY`` next to a gateway token) and is merged with an
+        explicit auth when the user gave one.
+        """
+        adapter = self.registry.create(selection.agent, selection.options)
+        if selection.endpoint is not None:
+            auth = adapter.endpoint_auth(selection.endpoint)
+            if selection.auth is not None:
+                auth = selection.auth.merged_with(auth)
+            return _drop_shadowed_api_key(adapter, selection.endpoint, auth)
+        if selection.auth is not None:
+            return selection.auth
+        return adapter.default_auth(mode)
+
+    def check_agent(self, adapter: AgentAdapter, runner: CommandRunner) -> AgentAvailability:
+        """Run the adapter's availability check inside its agent image."""
+        return adapter.check_availability(runner)
+
+    # -- execution --------------------------------------------------------
+
+    def run(
+        self,
+        config: ExperimentConfig,
+        on_trial_complete: TrialCallback | None = None,
+        run_id: str | None = None,
+    ) -> RunSummary:
+        """Plan, persist the manifest, execute every trial in order, and summarize.
+
+        Every planned trial produces a stored ``TrialResult``; failures are
+        recorded with their status, never skipped silently.
+        """
+        plan = self.plan(config, run_id)
+        errors = [i for i in self.preflight(plan) if i.severity == "error"]
+        if errors:
+            details = "; ".join(f"{i.subject}: {i.message}" for i in errors)
+            raise PlanningError(f"pre-flight checks failed: {details}")
+        task = self.catalog.get_task(plan.task_id)
+        stacks = {s: self.catalog.get_stack(s) for s in config.stacks}
+        manifest = self.build_manifest(plan, config, task)
+        self.store.save_manifest(manifest)
+
+        summary = RunSummary(run_id=plan.run_id, total=len(plan.trials))
+
+        def record(result: TrialResult) -> None:
+            self.store.save_trial(result)
+            summary.by_status[result.status.value] = (
+                summary.by_status.get(result.status.value, 0) + 1
+            )
+            if on_trial_complete is not None:
+                on_trial_complete(result)
+
+        if config.max_parallel == 1:
+            abort_reason: str | None = None
+            for trial in plan.trials:
+                if abort_reason is not None:
+                    result = self._skeleton(plan, trial, task, stacks[trial.stack_id], config)
+                    result.status = TrialStatus.CANCELLED
+                    result.error = abort_reason
+                else:
+                    result = self.run_trial(plan, trial, task, stacks[trial.stack_id], config)
+                    if result.status is TrialStatus.INFRA_ERROR and config.stop_on_infra_error:
+                        abort_reason = f"run aborted after infra error in {trial.trial_id}"
+                record(result)
+        else:
+            self._run_parallel(plan, task, stacks, config, record)
+        summary.trial_ids = [trial.trial_id for trial in plan.trials]
+        return summary
+
+    def _run_parallel(
+        self,
+        plan: ExperimentPlan,
+        task: BenchmarkSpec,
+        stacks: dict[str, StackSpec],
+        config: ExperimentConfig,
+        record: TrialCallback,
+    ) -> None:
+        remaining = iter(plan.trials)
+        abort_reason: str | None = None
+        with ThreadPoolExecutor(max_workers=config.max_parallel) as pool:
+            active: dict[Future[TrialResult], PlannedTrial] = {}
+
+            def submit_next() -> bool:
+                trial = next(remaining, None)
+                if trial is None:
+                    return False
+                active[
+                    pool.submit(self.run_trial, plan, trial, task, stacks[trial.stack_id], config)
+                ] = trial
+                return True
+
+            for _ in range(config.max_parallel):
+                if not submit_next():
+                    break
+            while active:
+                done, _ = wait(active, return_when=FIRST_COMPLETED)
+                for future in sorted(done, key=lambda item: active[item].execution_order):
+                    trial = active.pop(future)
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        log.exception("trial %s crashed outside run_trial", trial.trial_id)
+                        result = self._skeleton(plan, trial, task, stacks[trial.stack_id], config)
+                        result.status = TrialStatus.INFRA_ERROR
+                        result.error = f"{type(exc).__name__}: {exc}"
+                    record(result)
+                    if result.status is TrialStatus.INFRA_ERROR and config.stop_on_infra_error:
+                        abort_reason = f"run aborted after infra error in {trial.trial_id}"
+                if abort_reason is None:
+                    while len(active) < config.max_parallel and submit_next():
+                        pass
+        if abort_reason is not None:
+            for trial in remaining:
+                result = self._skeleton(plan, trial, task, stacks[trial.stack_id], config)
+                result.status = TrialStatus.CANCELLED
+                result.error = abort_reason
+                record(result)
+
+    def build_manifest(
+        self, plan: ExperimentPlan, config: ExperimentConfig, task: BenchmarkSpec
+    ) -> RunManifest:
+        return RunManifest(
+            run_id=plan.run_id,
+            created_at=utcnow(),
+            platform_version=__version__,
+            platform_git_commit=_platform_commit(),
+            seed=plan.seed,
+            auth_mode=plan.auth_mode,
+            experiment=config.model_dump(mode="json"),
+            task_snapshot=task.model_dump(mode="json"),
+            trial_ids=[t.trial_id for t in plan.trials],
+            host={
+                "platform": platform.platform(),
+                "python": platform.python_version(),
+                "machine": platform.machine(),
+            },
+            acceptance_suite_sha256=suite_sha256(task),
+        )
+
+    def _skeleton(
+        self,
+        plan: ExperimentPlan,
+        trial: PlannedTrial,
+        task: BenchmarkSpec,
+        stack: StackSpec,
+        config: ExperimentConfig,
+    ) -> TrialResult:
+        return TrialResult(
+            trial_id=trial.trial_id,
+            run_id=plan.run_id,
+            task_id=task.id,
+            task_version=task.version,
+            trial_index=trial.trial_index,
+            execution_order=trial.execution_order,
+            max_repairs=config.max_repairs,
+            max_parallel=config.max_parallel,
+            status=TrialStatus.PENDING,
+            agent=AgentRecord(
+                name=trial.agent.agent,
+                requested_model=trial.agent.model,
+                reasoning_effort=trial.agent.reasoning_effort,
+                auth_mode=plan.auth_mode,
+                provider=(
+                    trial.agent.endpoint.provider
+                    if trial.agent.endpoint is not None
+                    else AgentRecord.default_provider(trial.agent.agent, trial.agent.model)
+                ),
+                endpoint_host=(
+                    trial.agent.endpoint.host if trial.agent.endpoint is not None else None
+                ),
+                resolved_model=trial.agent.model,
+            ),
+            environment=EnvironmentRecord(
+                stack=stack.ref,
+                language=stack.language,
+                language_version=stack.language_version,
+                framework=stack.framework,
+                framework_version=stack.framework_version,
+                services=[s.name for s in stack.services],
+            ),
+            tooling=ToolingRecord(
+                mode=config.tooling.mode,
+                enabled_tools=list(config.tooling.enabled_tools),
+                mcp_servers=[m.name for m in config.tooling.mcp_servers],
+            ),
+        )
+
+    def run_trial(
+        self,
+        plan: ExperimentPlan,
+        trial: PlannedTrial,
+        task: BenchmarkSpec,
+        stack: StackSpec,
+        config: ExperimentConfig,
+    ) -> TrialResult:
+        """One trial, in order:
+
+        fresh workspace -> stack image + agent layer -> container with credentials
+        -> timed agent run (inside the container) -> rate-limit detection
+        -> acceptance tests -> auth policy on metrics -> record.
+
+        Never raises for trial-level failures; they become the trial's status.
+        """
+        result = self._skeleton(plan, trial, task, stack, config)
+        result.status = TrialStatus.RUNNING
+        result.started_at = utcnow()
+        wall = Stopwatch()
+        wall.start()
+        log_dir = self.workspaces.log_dir(plan.run_id, trial.trial_id)
+        handle: EnvironmentHandle | None = None
+        try:
+            adapter = self.registry.create(trial.agent.agent, trial.agent.options)
+            auth = self.resolve_auth(trial.agent, plan.auth_mode)
+            workspace = self.workspaces.create(plan.run_id, trial.trial_id, task, stack.id)
+            log_dir.mkdir(parents=True, exist_ok=True)
+
+            _phase(trial.trial_id, "preparing images")
+            stack_image = self.environment.prepare_image(stack)
+            image = self.environment.prepare_agent_image(stack_image, adapter.image_layer())
+            result.environment.image_ref = stack_image.reference
+            result.environment.image_digest = stack_image.digest
+            result.environment.agent_image_ref = image.reference
+
+            _phase(trial.trial_id, "starting containers")
+            handle = self.environment.create(stack, image, workspace, trial.trial_id, auth)
+            self.environment.start(handle, plan.timeouts.setup_seconds)
+            runner = self.environment.runner(handle)
+            if stack.setup_commands:
+                _phase(trial.trial_id, f"running {len(stack.setup_commands)} setup command(s)")
+            for i, cmd in enumerate(stack.setup_commands):
+                res = runner.run(
+                    cmd,
+                    timeout_seconds=plan.timeouts.setup_seconds,
+                    workdir=stack.workdir,
+                    env=stack.build_args,
+                    stdout_path=log_dir / f"setup-{i}.stdout.log",
+                    stderr_path=log_dir / f"setup-{i}.stderr.log",
+                )
+                if not res.ok:
+                    raise ExecutionEnvironmentError(f"stack setup command failed: {cmd}")
+            snapshot_baseline(runner, stack.workdir)
+            result.agent.version = adapter.get_version(runner)
+
+            original_prompt = self.render_prompt(task, stack)
+            prompt = original_prompt
+            attempts: list[AgentRunResult] = []
+            agent_start = wall.mark("agent_start")
+            for attempt in range(config.max_repairs + 1):
+                attempt_dir = log_dir if attempt == 0 else log_dir / f"repair-{attempt}"
+                attempt_dir.mkdir(parents=True, exist_ok=True)
+                if attempt > 0:
+                    # The previous attempt's work is committed; drop only what its
+                    # acceptance run left behind before the agent repairs it.
+                    discard_untracked(runner, stack.workdir)
+                    # The previous probes describe the previous attempt; if this one
+                    # fails before its own probes, nothing was observed for it.
+                    result.environment.installed_versions = {}
+                agent_task = AgentTask(
+                    trial_id=trial.trial_id,
+                    prompt=prompt,
+                    workdir=stack.workdir,
+                    log_dir=attempt_dir,
+                    timeout_seconds=plan.timeouts.agent_seconds,
+                    auth_mode=plan.auth_mode,
+                    model=trial.agent.model,
+                    reasoning_effort=trial.agent.reasoning_effort,
+                    tooling=config.tooling,
+                    endpoint=trial.agent.endpoint,
+                    options=trial.agent.options,
+                )
+                _phase(
+                    trial.trial_id,
+                    f"agent attempt {attempt + 1} running "
+                    f"(limit {format_duration(agent_task.timeout_seconds)}), "
+                    f"output: {attempt_dir / 'agent.stdout.log'}",
+                )
+                with AgentHeartbeat(
+                    trial.trial_id,
+                    attempt_dir / "agent.stdout.log",
+                    agent_task.timeout_seconds,
+                    self.settings.progress_interval_seconds,
+                ):
+                    agent_result = self.execute_agent(adapter, agent_task, runner)
+                attempts.append(agent_result)
+                self._record_agent(result, attempts)
+                # Snapshot the implementation before acceptance runs: files the app
+                # creates while being tested (SQLite databases, runtime logs) must
+                # never land in the commit or in the code metrics.
+                self._snapshot_implementation(result, runner, stack)
+                if stack.version_probes:
+                    _phase(trial.trial_id, f"running {len(stack.version_probes)} version probe(s)")
+                    self._record_installed_versions(trial, runner, stack, result)
+
+                _phase(trial.trial_id, f"running acceptance tests after attempt {attempt + 1}")
+                quality, test_logs, tester_ok, feedback = self.run_acceptance_tests(
+                    task, stack, handle, attempt_dir, plan
+                )
+                quality.repair_iterations = Metric[int].of(attempt, MetricSource.MEASURED)
+                result.metrics.quality = quality
+                prefix = "" if attempt == 0 else f"repair-{attempt}-"
+                result.log_files.update({f"{prefix}{k}": str(v) for k, v in test_logs.items()})
+                result.status = _final_status(agent_result, quality, tester_ok)
+                if result.status is TrialStatus.PASSED:
+                    if config.max_repairs:
+                        timer = result.metrics.performance
+                        timer.time_to_all_tests_pass_seconds = Metric[float].of(
+                            wall.elapsed - agent_start, MetricSource.MEASURED, unit="s"
+                        )
+                    break
+                if not tester_ok and result.status is TrialStatus.FAILED and not result.error:
+                    result.error = "acceptance tester did not finish cleanly (see acceptance logs)"
+                if (
+                    result.status is not TrialStatus.FAILED
+                    or not tester_ok
+                    or not quality.tests_failed.value
+                    or attempt == config.max_repairs
+                ):
+                    break
+                prompt = (
+                    f"{original_prompt}\n\nYour previous implementation failed the acceptance "
+                    f"tests. Repair the existing workspace. Test failures:\n{feedback}"
+                )
+
+        except (ExecutionEnvironmentError, ConfigurationError, AgentExecutionError) as exc:
+            log.error("trial %s failed: %s", trial.trial_id, exc)
+            result.status = TrialStatus.INFRA_ERROR
+            result.error = str(exc)
+        except Exception as exc:  # never lose a trial to an unexpected bug
+            log.exception("trial %s crashed", trial.trial_id)
+            result.status = TrialStatus.INFRA_ERROR
+            result.error = f"{type(exc).__name__}: {exc}"
+        finally:
+            if handle is not None:
+                self._cleanup(handle, log_dir, result)
+            if not self.settings.keep_workspaces and result.status is not TrialStatus.INFRA_ERROR:
+                self.workspaces.remove(plan.run_id, trial.trial_id)
+        # Also after an infrastructure error: probes that already ran still show
+        # whether the agent changed the framework version.
+        self._check_selected_version(trial, stack, result)
+        result.finished_at = utcnow()
+        result.metrics.performance.total_wall_clock_seconds = Metric[float].of(
+            wall.stop(), MetricSource.MEASURED, unit="s"
+        )
+        result.metrics = apply_auth_policy(
+            result.metrics,
+            plan.auth_mode,
+            custom_endpoint=trial.agent.endpoint is not None,
+        )
+        _phase(
+            trial.trial_id,
+            f"{result.status.value} in "
+            f"{format_duration(result.metrics.performance.total_wall_clock_seconds.value or 0)}",
+        )
+        return result
+
+    def _cleanup(self, handle: EnvironmentHandle, log_dir: Path, result: TrialResult) -> None:
+        """Collect logs and destroy the environment; a failure here fails only this trial."""
+        problems = []
+        try:
+            logs = self.environment.collect_logs(handle, log_dir)
+            result.log_files.update({k: str(v) for k, v in logs.items()})
+        except Exception as exc:
+            log.exception("trial %s: collecting logs failed", result.trial_id)
+            problems.append(f"collecting logs failed: {exc}")
+        try:
+            self.environment.destroy(handle)
+        except Exception as exc:
+            log.exception("trial %s: cleanup failed", result.trial_id)
+            problems.append(f"cleanup failed: {exc}")
+        if problems:
+            result.status = TrialStatus.INFRA_ERROR
+            result.error = "; ".join(filter(None, [result.error, *problems]))
+
+    def render_prompt(self, task: BenchmarkSpec, stack: StackSpec) -> str:
+        """Build the agent prompt from the task template and stack facts."""
+        return task.render_prompt(
+            {
+                "language": stack.language,
+                "language_version": stack.language_version,
+                "framework": stack.framework,
+                "framework_version": stack.framework_version,
+                "workdir": stack.workdir,
+                "environment_notes": stack.environment_notes.strip(),
+            }
+        )
+
+    def execute_agent(
+        self, adapter: AgentAdapter, task: AgentTask, runner: CommandRunner
+    ) -> AgentRunResult:
+        """Run the agent with the timer around nothing but the agent itself."""
+        return adapter.run(task, runner)
+
+    def _record_agent(self, result: TrialResult, attempts: list[AgentRunResult]) -> None:
+        agent = attempts[-1]
+        perf = result.metrics.performance
+        seconds = sum(attempt.duration_seconds for attempt in attempts)
+        perf.agent_execution_seconds = Metric[float].of(seconds, MetricSource.MEASURED, unit="s")
+        perf.time_to_first_implementation_seconds = Metric[float].of(
+            attempts[0].duration_seconds,
+            MetricSource.DERIVED,
+            unit="s",
+            note="first agent attempt",
+        )
+        perf.time_to_all_tests_pass_seconds = Metric[float].not_applicable(
+            "acceptance tests have not passed"
+            if result.max_repairs
+            else "repair iterations are disabled"
+        )
+        result.metrics.usage = _combined_usage(attempts)
+        result.agent.version = agent.agent_version or result.agent.version
+        result.agent.reported_model = agent.reported_model
+        result.agent.resolved_model = AgentRecord.resolve_model(
+            result.agent.requested_model, agent.reported_model
+        )
+        result.rate_limit_events = [event for item in attempts for event in item.rate_limit_events]
+        result.raw = (
+            dict(agent.raw) if len(attempts) == 1 else {"attempts": [item.raw for item in attempts]}
+        )
+        for index, item in enumerate(attempts):
+            prefix = "" if index == 0 else f"repair-{index}-"
+            for name, path in (
+                ("agent-stdout", item.stdout_path),
+                ("agent-stderr", item.stderr_path),
+            ):
+                if path is not None:
+                    result.log_files[f"{prefix}{name}"] = str(path)
+        if agent.error:
+            result.error = agent.error
+        elif not agent.timed_out and not agent.succeeded:
+            result.error = f"agent exited with code {agent.exit_code}"
+
+    def _snapshot_implementation(
+        self, result: TrialResult, runner: CommandRunner, stack: StackSpec
+    ) -> None:
+        """Commit what the agent wrote and measure it against the baseline.
+
+        Called before acceptance tests run, so runtime artefacts the app creates
+        while being tested are never counted as the agent's work. Each repair
+        attempt overwrites the snapshot with the final implementation.
+        """
+        change = snapshot_result(runner, stack.workdir)
+        result.workspace_git_commit = change.commit
+        result.metrics.code.lines_of_code = Metric[int].of(
+            change.lines_added,
+            MetricSource.MEASURED,
+            unit="lines",
+            note="lines added since the initial state, excluding dependencies and lockfiles",
+        )
+        result.metrics.code.files_changed = Metric[int].of(
+            change.files_changed, MetricSource.MEASURED
+        )
+
+    def _record_installed_versions(
+        self, trial: PlannedTrial, runner: CommandRunner, stack: StackSpec, result: TrialResult
+    ) -> None:
+        """Run the stack's version probes and record what is actually installed.
+
+        Runs after the agent finishes and before the acceptance tests, so the
+        record shows what was tested. Each probe runs in the app container at the
+        stack's ``workdir`` and must print the version on stdout; its first line
+        is recorded. A probe that fails, times out or prints nothing is skipped
+        with a warning; probes never change the trial's status.
+        """
+        result.environment.installed_versions = {}
+        for name, command in stack.version_probes.items():
+            try:
+                res = runner.run(
+                    command, timeout_seconds=_VERSION_PROBE_TIMEOUT_SECONDS, workdir=stack.workdir
+                )
+            except Exception as exc:  # a broken probe must never fail the trial
+                log.warning(
+                    "trial %s: version probe '%s' failed (%s); version not recorded",
+                    trial.trial_id,
+                    name,
+                    exc,
+                )
+                continue
+            lines = res.stdout.strip().splitlines()
+            first_line = lines[0].strip() if lines else ""
+            if res.ok and first_line:
+                result.environment.installed_versions[name] = first_line
+                continue
+            if res.timed_out:
+                why = "timed out"
+            elif not res.ok:
+                why = f"exit code {res.exit_code}"
+            else:
+                why = "no output"
+            log.warning(
+                "trial %s: version probe '%s' failed (%s); version not recorded",
+                trial.trial_id,
+                name,
+                why,
+            )
+
+    def _check_selected_version(
+        self, trial: PlannedTrial, stack: StackSpec, result: TrialResult
+    ) -> None:
+        """Record whether the installed framework is still the selected version.
+
+        Only stacks that take a version install an exact one; for the others
+        ``framework_version_changed`` stays None (not checked). The agent may
+        have changed the version on purpose, so the trial keeps its status; a
+        change is warned, flagged for exports and noted in ``error``.
+        """
+        installed = result.environment.installed_versions.get("framework")
+        if not stack.framework_version_param or installed is None:
+            return
+        changed = not _same_version(stack, installed, stack.framework_version)
+        result.environment.framework_version_changed = changed
+        if not changed:
+            return
+        note = (
+            f"{VERSION_CHANGED_NOTE}: {stack.framework} {installed} is installed, "
+            f"{stack.framework_version} was selected"
+        )
+        log.warning("trial %s: %s", trial.trial_id, note)
+        result.error = "; ".join(filter(None, [result.error, note]))
+
+    def run_acceptance_tests(
+        self,
+        task: BenchmarkSpec,
+        stack: StackSpec,
+        handle: EnvironmentHandle,
+        log_dir: Path,
+        plan: ExperimentPlan,
+    ) -> tuple[QualityMetrics, dict[str, Path], bool, str]:
+        """Restart the container, start the app, and run the black-box suite against it.
+
+        Returns the quality metrics, log files, and whether the tester finished cleanly.
+        """
+        spec = task.acceptance_tests
+        quality = QualityMetrics()
+        if spec.suite is None:
+            return quality, {}, False, ""
+        suite = spec.suite if spec.suite.is_absolute() else (task.source_dir or Path()) / spec.suite
+        if not suite.is_dir():
+            raise ConfigurationError(f"acceptance suite not found: {suite}")
+        # An explicit image wins, so a prebuilt tester can replace the suite's Dockerfile.
+        if spec.image:
+            tester = ImageInfo(stack_id=f"acceptance-{task.id}", reference=spec.image)
+        elif (suite / "Dockerfile").is_file():
+            tester = self.environment.build_image(f"acceptance-{task.id}", suite)
+        else:
+            raise ConfigurationError("acceptance suite needs a Dockerfile or an 'image'")
+
+        self.environment.restart(handle, plan.timeouts.setup_seconds)
+        self.environment.exec_detached(
+            handle,
+            ["sh", "-c", f"{shlex.join(spec.app_start_command)} >/tmp/app.log 2>&1"],
+            workdir=stack.workdir,
+        )
+        results_dir = log_dir / "acceptance"
+        results_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(results_dir, 0o777)  # written by the tester's non-root user
+        # A report left by an earlier run of this trial must never count for this one.
+        (results_dir / spec.results_file).unlink(missing_ok=True)
+        res = self.environment.run_job(
+            handle,
+            tester,
+            spec.command,
+            timeout_seconds=plan.timeouts.tests_seconds,
+            mounts=[
+                Mount(source=suite, target="/acceptance"),
+                Mount(source=results_dir, target="/results", read_only=False),
+            ],
+            env={"BASE_URL": f"http://app:{spec.app_port}", "APP_PORT": str(spec.app_port)},
+            stdout_path=log_dir / "acceptance.stdout.log",
+            stderr_path=log_dir / "acceptance.stderr.log",
+        )
+        app_log = log_dir / "app.log"
+        app = self.environment.exec(
+            handle, ["cat", "/tmp/app.log"], timeout_seconds=30, stdout_path=app_log
+        )
+        files = {
+            "acceptance-stdout": log_dir / "acceptance.stdout.log",
+            "acceptance-stderr": log_dir / "acceptance.stderr.log",
+        }
+        if app.ok:
+            files["app"] = app_log
+        junit = results_dir / spec.results_file
+        if not junit.is_file():
+            why = "timed out" if res.timed_out else f"exit code {res.exit_code}"
+            note = f"acceptance suite produced no {spec.results_file} ({why})"
+            quality.tests_passed = Metric[int].unavailable(note)
+            quality.tests_failed = Metric[int].unavailable(note)
+            quality.tests_total = Metric[int].unavailable(note)
+            return quality, files, False, ""
+        files["acceptance-junit"] = junit
+        summary = parse_junit(junit)
+        quality.tests_total = Metric[int].of(summary.tests, MetricSource.MEASURED)
+        quality.tests_passed = Metric[int].of(summary.passed, MetricSource.MEASURED)
+        quality.tests_failed = Metric[int].of(summary.failed, MetricSource.MEASURED)
+        quality.repair_iterations = Metric[int].of(0, MetricSource.MEASURED)
+        quality.retry_count = Metric[int].of(0, MetricSource.MEASURED)
+        # A tester that timed out or crashed after writing a report did not finish the
+        # suite. Failing tests are a normal ending (pytest exits 1 for them).
+        finished = not res.timed_out and res.exit_code in spec.completed_exit_codes
+        return quality, files, finished, "\n".join(summary.failure_details)[:4000]
+
+
+def _combined_usage(attempts: list[AgentRunResult]) -> UsageMetrics:
+    if len(attempts) == 1:
+        return attempts[0].usage
+    usages = [attempt.usage for attempt in attempts]
+    tokens = [usage.tokens for usage in usages]
+    return UsageMetrics(
+        tokens=TokenUsage(
+            accounting_scheme=tokens[0].accounting_scheme,
+            input_tokens=_sum_int([item.input_tokens for item in tokens]),
+            cached_input_tokens=_sum_int([item.cached_input_tokens for item in tokens]),
+            output_tokens=_sum_int([item.output_tokens for item in tokens]),
+            reasoning_tokens=_sum_int([item.reasoning_tokens for item in tokens]),
+            total_tokens=_sum_int([item.total_tokens for item in tokens]),
+        ),
+        cost=_sum_float([usage.cost for usage in usages]),
+        turns=_sum_int([usage.turns for usage in usages]),
+    )
+
+
+def _sum_int(metrics: list[Metric[int]]) -> Metric[int]:
+    if not all(metric.is_available for metric in metrics):
+        return Metric[int].unavailable("not reported for every agent attempt", unit=metrics[0].unit)
+    return Metric[int].of(
+        sum(metric.value or 0 for metric in metrics),
+        MetricSource.DERIVED,
+        unit=metrics[0].unit,
+        note="sum across agent attempts",
+    )
+
+
+def _sum_float(metrics: list[Metric[float]]) -> Metric[float]:
+    if not all(metric.is_available for metric in metrics):
+        return Metric[float].unavailable(
+            "not reported for every agent attempt", unit=metrics[0].unit
+        )
+    return Metric[float].of(
+        sum(metric.value or 0.0 for metric in metrics),
+        MetricSource.DERIVED,
+        unit=metrics[0].unit,
+        note="sum across agent attempts",
+    )
+
+
+def _drop_shadowed_api_key(
+    adapter: AgentAdapter, endpoint: EndpointConfig, auth: AgentAuthConfig
+) -> AgentAuthConfig:
+    """The endpoint's credentials with the adapter's provider API-key variable removed.
+
+    Some CLIs prefer their provider's own key variable over the gateway
+    credential (Claude Code checks ``ANTHROPIC_API_KEY`` before the gateway's
+    ``ANTHROPIC_AUTH_TOKEN``), so an explicit ``auth.env`` entry for it would
+    bypass the gateway. The endpoint's own variable (``endpoint.api_key_env``)
+    is never dropped.
+    """
+    shadowed = set(adapter.default_auth(AuthMode.API_KEY).env) - {endpoint.api_key_env}
+    env = [name for name in auth.env if name not in shadowed]
+    env_from = {c: h for c, h in auth.env_from.items() if c not in shadowed}
+    if env == auth.env and env_from == auth.env_from:
+        return auth
+    return AgentAuthConfig(mode=auth.mode, env=env, env_from=env_from, files=auth.files)
+
+
+def _final_status(
+    agent: AgentRunResult, quality: QualityMetrics, tester_ok: bool = True
+) -> TrialStatus:
+    if agent.timed_out:
+        return TrialStatus.TIMED_OUT
+    if agent.stopped_by_rate_limit:
+        return TrialStatus.RATE_LIMITED
+    if not agent.succeeded:
+        return TrialStatus.AGENT_ERROR
+    passed, total = quality.tests_passed, quality.tests_total
+    all_passed = passed.is_available and total.is_available and passed.value == total.value
+    if tester_ok and all_passed and total.value:
+        return TrialStatus.PASSED
+    return TrialStatus.FAILED
+
+
+def _platform_commit() -> str | None:
+    root = Path(__file__).resolve().parents[3]
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return out.stdout.strip() or None
+
+
+def _phase(trial_id: str, message: str) -> None:
+    log.info("trial %s: %s", trial_id, message)

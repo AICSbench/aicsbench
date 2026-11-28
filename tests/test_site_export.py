@@ -12,14 +12,14 @@ import jsonschema
 import pytest
 from typer.testing import CliRunner
 
-from ai_benchmark.cli.app import app
-from ai_benchmark.comparison import compare_matrix, compare_trials
-from ai_benchmark.models import ComparisonDimension, TrialStatus
-from ai_benchmark.models.results import TrialResult
-from ai_benchmark.site.export import export_site
-from ai_benchmark.site.slugs import SlugCollisionError
-from ai_benchmark.storage import JsonResultStore
-from ai_benchmark.storage.base import ResultFilter
+from aicsbench.cli.app import app
+from aicsbench.comparison import compare_matrix, compare_trials
+from aicsbench.models import ComparisonDimension, TrialStatus
+from aicsbench.models.results import TrialResult
+from aicsbench.site.export import export_site
+from aicsbench.site.slugs import SlugCollisionError
+from aicsbench.storage import JsonResultStore
+from aicsbench.storage.base import ResultFilter
 
 from .regen_site_export import (
     BASE_URL,
@@ -186,7 +186,7 @@ def test_export_accepts_task_9_trial_row_keys(
     fixture_data: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``trial_row`` gains provider and endpoint_host with task 9; the export must keep up."""
-    import ai_benchmark.site.export as export_module
+    import aicsbench.site.export as export_module
 
     original = export_module.trial_row
 
@@ -399,7 +399,7 @@ def test_colliding_suffixed_slugs_fail_and_write_nothing(tmp_path: Path) -> None
 
 
 def test_out_may_not_be_a_symlinked_submissions_target(tmp_path: Path) -> None:
-    from ai_benchmark.site.export import SiteExportError
+    from aicsbench.site.export import SiteExportError
 
     real = tmp_path / "data-real"
     write_fixture_data(real)
@@ -414,7 +414,7 @@ def test_out_may_not_be_a_symlinked_submissions_target(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("relative", ["submissions", "submissions/out", "."])
 def test_out_may_not_hold_the_bundles(fixture_data: Path, relative: str) -> None:
-    from ai_benchmark.site.export import SiteExportError
+    from aicsbench.site.export import SiteExportError
 
     with pytest.raises(SiteExportError):
         run_export(fixture_data, fixture_data / relative)

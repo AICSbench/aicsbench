@@ -4,10 +4,10 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from ai_benchmark.config import AgentAuthConfig, AgentSelection, CredentialFile, ExperimentConfig
-from ai_benchmark.models import AuthMode, Metric, MetricSource, TrialMetrics
-from ai_benchmark.orchestrator import apply_auth_policy
-from ai_benchmark.orchestrator.policy import REPORTED_COST_KEY
+from aicsbench.config import AgentAuthConfig, AgentSelection, CredentialFile, ExperimentConfig
+from aicsbench.models import AuthMode, Metric, MetricSource, TrialMetrics
+from aicsbench.orchestrator import apply_auth_policy
+from aicsbench.orchestrator.policy import REPORTED_COST_KEY
 
 
 def test_auth_lists_names_not_secret_values() -> None:

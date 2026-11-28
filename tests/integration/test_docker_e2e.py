@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from ai_benchmark.agents import (
+from aicsbench.agents import (
     AgentAdapter,
     AgentAvailability,
     AgentCapabilities,
@@ -29,12 +29,12 @@ from ai_benchmark.agents import (
     AgentTask,
     CommandRunner,
 )
-from ai_benchmark.config import AgentAuthConfig, ExperimentConfig, SpecCatalog
-from ai_benchmark.config.settings import DockerSettings, PlatformSettings
-from ai_benchmark.environment import DockerExecutionEnvironment
-from ai_benchmark.models import AuthMode, Metric, RateLimitEvent, TrialStatus, UsageMetrics
-from ai_benchmark.orchestrator import BenchmarkOrchestrator
-from ai_benchmark.storage import JsonResultStore
+from aicsbench.config import AgentAuthConfig, ExperimentConfig, SpecCatalog
+from aicsbench.config.settings import DockerSettings, PlatformSettings
+from aicsbench.environment import DockerExecutionEnvironment
+from aicsbench.models import AuthMode, Metric, RateLimitEvent, TrialStatus, UsageMetrics
+from aicsbench.orchestrator import BenchmarkOrchestrator
+from aicsbench.storage import JsonResultStore
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("BENCHMARK_DOCKER_TESTS") != "1"

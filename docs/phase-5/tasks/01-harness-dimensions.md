@@ -14,14 +14,14 @@ nothing calls it a harness. See [decisions.md](../decisions.md) D8 and the
 
 ## Changes
 
-1. `src/ai_benchmark/models/enums.py`, `ComparisonDimension`: add
+1. `src/aicsbench/models/enums.py`, `ComparisonDimension`: add
    - `HARNESS = "harness"` → `agent.name` (same grouping as `AGENT`, the
      user-facing name)
    - `HARNESS_VERSION = "harness_version"` → `f"{agent.name} {agent.version or 'unknown'}"`
    - `HARNESS_MODEL = "harness_model"` → same value as `AGENT_MODEL`
    Keep `AGENT` and `AGENT_MODEL` working; existing CLI flags and stored
    results must not break.
-2. `src/ai_benchmark/models/results.py`, `TrialResult.dimension_value`: map
+2. `src/aicsbench/models/results.py`, `TrialResult.dimension_value`: map
    the three new members.
 3. **One model across harnesses.** The same model has different labels per
    harness: Codex records `gpt-6-luna`, OpenCode records
@@ -37,7 +37,7 @@ nothing calls it a harness. See [decisions.md](../decisions.md) D8 and the
    `HARNESS_VERSION`) and for the site's harness pages. `MODEL` and
    `AGENT_MODEL` grouping keep using `model_label`, so existing output is
    unchanged.
-4. `src/ai_benchmark/comparison.py`, `compare_trials`: it refuses
+4. `src/aicsbench/comparison.py`, `compare_trials`: it refuses
    comparisons that leave another dimension mixed. Extend those rules:
    - `HARNESS` behaves like `AGENT` (one model, one stack).
    - `HARNESS_MODEL` behaves like `AGENT_MODEL` (one stack).
@@ -65,11 +65,11 @@ nothing calls it a harness. See [decisions.md](../decisions.md) D8 and the
      Every other cell holds exactly one stack.
    - The mixed comparability key and mixed suite refusals are unchanged.
    - CLI: `aicsbench compare --by stack,model` (comma-separated).
-6. `src/ai_benchmark/reporting.py`, `trial_row`: add `harness`,
+6. `src/aicsbench/reporting.py`, `trial_row`: add `harness`,
    `harness_version`, `requested_model`, `reasoning_effort` (see
    [schemas.md](../schemas.md#datatrialsjson)). Existing keys keep their
    names, order and meaning; new keys go at the end.
-7. `src/ai_benchmark/storage/base.py`, `ResultFilter`: add
+7. `src/aicsbench/storage/base.py`, `ResultFilter`: add
    `harness_version: str | None = None`, applied in `JsonResultStore`.
 8. CLI: `aicsbench compare --by harness|harness_version|harness_model` works
    (it already takes the enum); `aicsbench results` gets

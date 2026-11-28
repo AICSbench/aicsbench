@@ -61,7 +61,7 @@ adding a key does not. `aicsbench/web` refuses an export whose
 `export_schema` it does not support.
 
 `schema/*.schema.json` (JSON Schema draft 2020-12) are generated from the
-pydantic models in `src/ai_benchmark/site/models.py` that write the export,
+pydantic models in `src/aicsbench/site/models.py` that write the export,
 so they cannot drift from it. Every model forbids extra keys.
 
 ## How `aicsbench/web` consumes it

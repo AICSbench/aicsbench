@@ -7,18 +7,18 @@ from typing import Any
 
 import pytest
 
-from ai_benchmark.agents import AgentTask, default_registry
-from ai_benchmark.agents.agy import AgyAdapter
-from ai_benchmark.agents.amp import AmpAdapter
-from ai_benchmark.agents.claude_code import ClaudeCodeAdapter
-from ai_benchmark.agents.cli import CliAgentAdapter
-from ai_benchmark.agents.codex import CodexAdapter
-from ai_benchmark.agents.commandcode import CommandCodeAdapter
-from ai_benchmark.agents.opencode import OpenCodeAdapter
-from ai_benchmark.config.experiment import EndpointConfig
-from ai_benchmark.environment.base import CommandResult
-from ai_benchmark.errors import ConfigurationError
-from ai_benchmark.models import AuthMode
+from aicsbench.agents import AgentTask, default_registry
+from aicsbench.agents.agy import AgyAdapter
+from aicsbench.agents.amp import AmpAdapter
+from aicsbench.agents.claude_code import ClaudeCodeAdapter
+from aicsbench.agents.cli import CliAgentAdapter
+from aicsbench.agents.codex import CodexAdapter
+from aicsbench.agents.commandcode import CommandCodeAdapter
+from aicsbench.agents.opencode import OpenCodeAdapter
+from aicsbench.config.experiment import EndpointConfig
+from aicsbench.environment.base import CommandResult
+from aicsbench.errors import ConfigurationError
+from aicsbench.models import AuthMode
 
 SAMPLES = Path(__file__).parent / "fixtures" / "agents"
 
@@ -517,7 +517,7 @@ def test_agy_stderr_replaces_missing_result_error(tmp_path: Path) -> None:
 
 
 def test_agy_provider_is_google() -> None:
-    from ai_benchmark.models.results import AgentRecord
+    from aicsbench.models.results import AgentRecord
 
     assert AgentRecord.default_provider("agy", "gemini-3.8-flash-medium") == "google"
 

@@ -3,16 +3,16 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ai_benchmark.cli.app import app
-from ai_benchmark.comparison import compare_trials
-from ai_benchmark.models import (
+from aicsbench.cli.app import app
+from aicsbench.comparison import compare_trials
+from aicsbench.models import (
     ComparisonDimension,
     Metric,
     MetricSource,
     TrialResult,
     TrialStatus,
 )
-from ai_benchmark.storage import JsonResultStore
+from aicsbench.storage import JsonResultStore
 
 from .test_storage import manifest, trial
 

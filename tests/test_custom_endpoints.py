@@ -13,21 +13,21 @@ from typing import Any, ClassVar
 import pytest
 from typer.testing import CliRunner
 
-from ai_benchmark.agents import AgentRegistry, AgentTask
-from ai_benchmark.agents.claude_code import ClaudeCodeAdapter
-from ai_benchmark.agents.codex import CodexAdapter
-from ai_benchmark.agents.opencode import (
+from aicsbench.agents import AgentRegistry, AgentTask
+from aicsbench.agents.claude_code import ClaudeCodeAdapter
+from aicsbench.agents.codex import CodexAdapter
+from aicsbench.agents.opencode import (
     OPENCODE_CONFIG_CONTENT,
     OPENCODE_PROVIDER_ID,
     OpenCodeAdapter,
 )
-from ai_benchmark.cli.app import app
-from ai_benchmark.comparison import compare_trials
-from ai_benchmark.config import AgentSelection, EndpointConfig, ExperimentConfig, SpecCatalog
-from ai_benchmark.config.settings import PlatformSettings
-from ai_benchmark.environment import CommandResult
-from ai_benchmark.errors import ConfigurationError
-from ai_benchmark.models import (
+from aicsbench.cli.app import app
+from aicsbench.comparison import compare_trials
+from aicsbench.config import AgentSelection, EndpointConfig, ExperimentConfig, SpecCatalog
+from aicsbench.config.settings import PlatformSettings
+from aicsbench.environment import CommandResult
+from aicsbench.errors import ConfigurationError
+from aicsbench.models import (
     AgentRecord,
     AuthMode,
     ComparisonDimension,
@@ -37,14 +37,14 @@ from ai_benchmark.models import (
     TrialStatus,
     UsageMetrics,
 )
-from ai_benchmark.orchestrator import BenchmarkOrchestrator
-from ai_benchmark.orchestrator.policy import (
+from aicsbench.orchestrator import BenchmarkOrchestrator
+from aicsbench.orchestrator.policy import (
     CUSTOM_ENDPOINT_COST_NOTE,
     REPORTED_COST_KEY,
     apply_auth_policy,
 )
-from ai_benchmark.storage import JsonResultStore
-from ai_benchmark.submission.validate import validate_bundle
+from aicsbench.storage import JsonResultStore
+from aicsbench.submission.validate import validate_bundle
 
 from .conftest import REPO_ROOT
 from .fakes import FakeAdapter, FakeEnvironment
@@ -1138,7 +1138,7 @@ def test_endpoint_cost_is_unavailable_with_note() -> None:
 
 @pytest.fixture
 def catalog(settings: Any) -> Any:
-    from ai_benchmark.config import SpecCatalog
+    from aicsbench.config import SpecCatalog
 
     return SpecCatalog(settings)
 

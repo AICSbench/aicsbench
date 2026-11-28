@@ -8,12 +8,12 @@ from typing import Any
 
 import pytest
 
-from ai_benchmark.agents import AgentRegistry
-from ai_benchmark.config import AgentSelection, ExperimentConfig, SpecCatalog
-from ai_benchmark.config.settings import PlatformSettings
-from ai_benchmark.environment import CommandResult
-from ai_benchmark.errors import ExecutionEnvironmentError
-from ai_benchmark.models import (
+from aicsbench.agents import AgentRegistry
+from aicsbench.config import AgentSelection, ExperimentConfig, SpecCatalog
+from aicsbench.config.settings import PlatformSettings
+from aicsbench.environment import CommandResult
+from aicsbench.errors import ExecutionEnvironmentError
+from aicsbench.models import (
     AuthMode,
     Metric,
     MetricSource,
@@ -21,9 +21,9 @@ from ai_benchmark.models import (
     TrialStatus,
     UsageMetrics,
 )
-from ai_benchmark.orchestrator import BenchmarkOrchestrator
-from ai_benchmark.orchestrator.policy import REPORTED_COST_KEY
-from ai_benchmark.storage import JsonResultStore, ResultFilter
+from aicsbench.orchestrator import BenchmarkOrchestrator
+from aicsbench.orchestrator.policy import REPORTED_COST_KEY
+from aicsbench.storage import JsonResultStore, ResultFilter
 
 from .conftest import REPO_ROOT
 from .fakes import FAKE_TOKEN_ENV, JUNIT_ALL_PASS, JUNIT_ONE_FAIL, FakeAdapter, FakeEnvironment
