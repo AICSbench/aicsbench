@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from ai_benchmark.agents import AgentTask, default_registry
+from ai_benchmark.agents.agy import AgyAdapter
 from ai_benchmark.agents.amp import AmpAdapter
 from ai_benchmark.agents.claude_code import ClaudeCodeAdapter
 from ai_benchmark.agents.cli import CliAgentAdapter
@@ -62,7 +63,9 @@ def run(adapter: CliAgentAdapter, tmp_path: Path, sample: str, exit_code: int = 
 
 
 def test_builtins_are_registered() -> None:
-    assert {"amp", "claude", "codex", "commandcode", "opencode"} <= set(default_registry.names())
+    assert {"agy", "amp", "claude", "codex", "commandcode", "opencode"} <= set(
+        default_registry.names()
+    )
 
 
 @pytest.mark.parametrize(
@@ -74,6 +77,51 @@ def test_image_layer_pins_version_and_needs_node(cls: type[CliAgentAdapter]) -> 
     assert "node" in layer.requires
     assert all(f"@{cls.cli_version}" in c for c in layer.install_commands)
     assert "latest" not in " ".join(layer.install_commands)
+
+
+def test_agy_image_layer_pins_official_linux_builds() -> None:
+    layer = AgyAdapter().image_layer()
+    assert layer.cli_version == "1.5.14"
+    assert layer.requires == []
+    install = " ".join(layer.install_commands)
+    assert "1.5.14-5302690847260672/linux-x64/cli_linux_x64.tar.gz" in install
+    assert "1.5.14-5302690847260672/linux-arm/cli_linux_arm64.tar.gz" in install
+    # Checksums published in the official linux_amd64/linux_arm64 manifests.
+    assert (
+        "83311d3f354567612dc16c1ae2ea9b503d6f6833aa4e138d39aa229da3f3bb99"
+        "b0e4d7cca0bce4796b0060d6a51d8113eb7449ed5dc0e7900bf217107ea5bff9"
+    ) in install
+    assert (
+        "c9b29bba475f63a1a80161ae93ba72b221c7a586d9851e4d0061546704bab66"
+        "d6b2760b25d716d191724fc7564f3246456ee151e28aa37af48dbcd72bdc6c463"
+    ) in install
+    assert "sha512sum -c -" in install
+    assert '"modelProvider":"gemini"' in install
+    assert '"mcp(*)"' in install
+    assert "latest" not in install
+
+
+def test_agy_is_api_key_only() -> None:
+    adapter = AgyAdapter()
+    auth = adapter.default_auth(AuthMode.API_KEY)
+    assert auth.env == ["GEMINI_API_KEY"]
+    assert auth.missing({}) == ["environment variable GEMINI_API_KEY is not set"]
+    assert auth.missing({"GEMINI_API_KEY": "x"}) == []
+    assert adapter.capabilities().supported_auth_modes == (AuthMode.API_KEY,)
+    with pytest.raises(ConfigurationError, match="subscription auth"):
+        adapter.default_auth(AuthMode.SUBSCRIPTION)
+
+
+def test_agy_rejects_custom_endpoints_and_unknown_options(tmp_path: Path) -> None:
+    endpoint = EndpointConfig(
+        provider="openrouter",
+        base_url="https://openrouter.ai/api/v1",
+        api_key_env="OPENROUTER_API_KEY",
+    )
+    with pytest.raises(ConfigurationError, match="custom endpoints"):
+        AgyAdapter().build_command(task(tmp_path, endpoint=endpoint))
+    with pytest.raises(ValueError, match="unknown agy options"):
+        AgyAdapter().validate_options({"api_key_env": "GEMINI_API_KEY"})
 
 
 @pytest.mark.parametrize(
@@ -149,6 +197,26 @@ def test_opencode_command(tmp_path: Path) -> None:
     assert cmd[-2:] == ["--", "Build the API"]
 
 
+def test_agy_command(tmp_path: Path) -> None:
+    cmd = AgyAdapter().build_command(
+        task(tmp_path, model="gemini-3.8-flash-medium", reasoning_effort="high")
+    )
+    assert cmd[:2] == ["agy", "--print"]
+    assert cmd[2] == "Build the API"
+    assert cmd[cmd.index("--output-format") + 1] == "stream-json"
+    assert "--dangerously-skip-permissions" in cmd
+    assert "--disable-slash-commands" in cmd
+    assert cmd[cmd.index("--mode") + 1] == "accept-edits"
+    assert cmd[cmd.index("--agent") + 1] == "default"
+    assert cmd[cmd.index("--model") + 1] == "gemini-3.8-flash-medium"
+    assert cmd[cmd.index("--effort") + 1] == "high"
+
+
+def test_agy_rejects_unknown_effort(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="reasoning efforts"):
+        AgyAdapter().build_command(task(tmp_path, reasoning_effort="ultra"))
+
+
 def test_amp_command(tmp_path: Path) -> None:
     cmd = AmpAdapter().build_command(
         task(tmp_path, model="zhipuai/glm-5.3-flash", reasoning_effort="high")
@@ -178,7 +246,13 @@ def test_amp_rejects_custom_endpoints(tmp_path: Path) -> None:
 
 
 def test_defaults_omit_model_and_effort(tmp_path: Path) -> None:
-    for adapter in (AmpAdapter(), ClaudeCodeAdapter(), CodexAdapter(), OpenCodeAdapter()):
+    for adapter in (
+        AgyAdapter(),
+        AmpAdapter(),
+        ClaudeCodeAdapter(),
+        CodexAdapter(),
+        OpenCodeAdapter(),
+    ):
         cmd = adapter.build_command(task(tmp_path))
         assert "--model" not in cmd and "--effort" not in cmd and "--variant" not in cmd
 
@@ -299,6 +373,34 @@ def test_commandcode_error_retains_only_nonzero_usage(
     assert result.usage.tokens.total_tokens.value == expected
 
 
+def test_agy_success(tmp_path: Path) -> None:
+    result, runner = run(AgyAdapter(), tmp_path, "agy_success.jsonl")
+    assert result.succeeded and result.error is None and not result.rate_limit_events
+    tokens = result.usage.tokens
+    assert tokens.accounting_scheme == "gemini"
+    assert tokens.input_tokens.value == 10418
+    assert tokens.cached_input_tokens.value == 8113
+    assert tokens.output_tokens.value == 589
+    assert tokens.reasoning_tokens.value == 551
+    assert tokens.total_tokens.value == 11007
+    assert not result.usage.cost.is_available
+    assert result.usage.turns.value == 1
+    assert "user turns" in (result.usage.turns.note or "")
+    assert not result.reported_model.is_available
+    assert result.raw["status"] == "SUCCESS"
+    assert result.raw["conversation_id"].startswith("11111111")
+    assert result.raw["init"]["agent"] == "default"
+    assert result.raw["steps"] == {
+        "total": 3,
+        "tools": ["write_to_file"],
+        "errors": 0,
+    }
+    # The prompt is not repeated in the stored command line.
+    assert "Build the API" not in result.command and "<prompt>" in result.command
+    assert runner.calls[0]["workdir"] == "/workspace"
+    assert runner.calls[0]["timeout"] == 600
+
+
 def test_amp_success(tmp_path: Path) -> None:
     result, runner = run(AmpAdapter(), tmp_path, "amp_success.jsonl")
     assert result.succeeded and result.error is None and not result.rate_limit_events
@@ -325,6 +427,99 @@ def test_amp_success(tmp_path: Path) -> None:
     assert "Build the API" not in result.command
     assert runner.calls[0]["workdir"] == "/workspace"
     assert runner.calls[0]["timeout"] == 600
+
+
+def test_agy_terminal_error(tmp_path: Path) -> None:
+    result, _ = run(AgyAdapter(), tmp_path, "agy_error.jsonl", exit_code=1)
+    assert not result.succeeded
+    assert result.error and result.error.startswith("invalid model selection")
+    assert "does-not-exist" in result.error
+    assert not result.rate_limit_events
+    for metric in (
+        result.usage.tokens.input_tokens,
+        result.usage.tokens.cached_input_tokens,
+        result.usage.tokens.output_tokens,
+        result.usage.tokens.reasoning_tokens,
+        result.usage.tokens.total_tokens,
+    ):
+        assert not metric.is_available
+    assert not result.usage.cost.is_available
+    assert result.raw["status"] == "ERROR"
+
+
+def test_agy_absent_usage_is_unavailable_not_zero(tmp_path: Path) -> None:
+    result, _ = run(AgyAdapter(), tmp_path, "agy_absent_usage.jsonl")
+    assert result.succeeded
+    for metric in (
+        result.usage.tokens.input_tokens,
+        result.usage.tokens.cached_input_tokens,
+        result.usage.tokens.output_tokens,
+        result.usage.tokens.reasoning_tokens,
+        result.usage.tokens.total_tokens,
+    ):
+        assert not metric.is_available
+        assert metric.value is None
+    assert not result.usage.cost.is_available
+    assert result.usage.turns.value == 1
+
+
+def test_agy_rate_limit_from_structured_error(tmp_path: Path) -> None:
+    runner = StubRunner(
+        (SAMPLES / "agy_rate_limit.jsonl").read_text(),
+        exit_code=3,
+        stderr=(SAMPLES / "agy_rate_limit.stderr.txt").read_text(),
+    )
+    result = AgyAdapter().run(task(tmp_path), runner)
+    assert result.stopped_by_rate_limit
+    assert "Quota exceeded" in result.rate_limit_events[0].message
+    assert not result.usage.tokens.input_tokens.is_available
+    assert result.raw["agy_error"]["error_code"] == 429
+
+
+def test_agy_structured_rate_limit_without_text_match(tmp_path: Path) -> None:
+    stdout = (
+        '{"event":"result","result":{"status":"ERROR","response":"",'
+        '"error":"structured failure","duration_seconds":0,"num_turns":1,'
+        '"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,'
+        '"cache_read_tokens":0,"total_tokens":0}}}\n'
+    )
+    stderr = (
+        'AGY_ERROR: {"short_error":"structured failure",'
+        '"status":"RESOURCE_EXHAUSTED","code_kind":"grpc","retryable":true}\n'
+    )
+    runner = StubRunner(stdout, exit_code=3, stderr=stderr)
+    result = AgyAdapter().run(task(tmp_path), runner)
+    assert result.stopped_by_rate_limit
+    assert result.rate_limit_events[0].message == "structured failure"
+    assert result.raw["agy_error"]["status"] == "RESOURCE_EXHAUSTED"
+
+
+def test_agy_in_band_error_is_not_success(tmp_path: Path) -> None:
+    result, _ = run(AgyAdapter(), tmp_path, "agy_error.jsonl", exit_code=0)
+    assert result.reported_failure and not result.succeeded
+    assert result.error and "invalid model selection" in result.error
+
+
+def test_agy_missing_result_is_an_error(tmp_path: Path) -> None:
+    runner = StubRunner('{"event":"init","conversation_id":"x","init":{"cwd":"/workspace"}}\n')
+    result = AgyAdapter().run(task(tmp_path), runner)
+    assert result.error and "no terminal result event" in result.error
+    assert result.reported_failure and not result.succeeded
+    assert not result.usage.tokens.input_tokens.is_available
+
+
+def test_agy_stderr_replaces_missing_result_error(tmp_path: Path) -> None:
+    runner = StubRunner("", exit_code=0, stderr="Error: authentication required\n")
+    result = AgyAdapter().run(task(tmp_path), runner)
+    assert result.error == "Error: authentication required"
+    assert result.reported_failure and not result.succeeded
+    assert not result.usage.tokens.input_tokens.is_available
+
+
+def test_agy_provider_is_google() -> None:
+    from ai_benchmark.models.results import AgentRecord
+
+    assert AgentRecord.default_provider("agy", "gemini-3.8-flash-medium") == "google"
 
 
 def test_amp_result_usage_is_not_double_counted(tmp_path: Path) -> None:
@@ -378,7 +573,13 @@ def test_amp_error_without_usage(tmp_path: Path) -> None:
 
 
 def test_garbage_output_is_unavailable_not_zero(tmp_path: Path) -> None:
-    for adapter in (AmpAdapter(), ClaudeCodeAdapter(), CodexAdapter(), OpenCodeAdapter()):
+    for adapter in (
+        AgyAdapter(),
+        AmpAdapter(),
+        ClaudeCodeAdapter(),
+        CodexAdapter(),
+        OpenCodeAdapter(),
+    ):
         runner = StubRunner("segmentation fault\n", exit_code=139)
         result = adapter.run(task(tmp_path), runner)
         assert not result.succeeded
@@ -399,6 +600,7 @@ def test_limit_text_in_stderr_is_detected(tmp_path: Path) -> None:
         ("2.1.323 (Claude Code)\n", "2.1.323"),
         ("codex-cli 0.167.2\n", "0.167.2"),
         ("1.19.5\n", "1.19.5"),
+        ("1.5.14\n", "1.5.14"),
         ("0.0.1795276835-g0feb0c\n", "0.0.1795276835-g0feb0c"),
     ],
 )

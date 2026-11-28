@@ -1,0 +1,2 @@
+error: agent executor error: RESOURCE_EXHAUSTED: Quota exceeded for metric generate_content_free_tier_requests
+AGY_ERROR: {"short_error":"agent executor error: RESOURCE_EXHAUSTED: Quota exceeded for metric generate_content_free_tier_requests","status":"RESOURCE_EXHAUSTED","error_code":429,"code_kind":"http","retryable":true,"error_id":"00000000-0000-4000-8000-000000000000-1"}

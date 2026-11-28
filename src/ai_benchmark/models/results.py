@@ -13,7 +13,7 @@ from ai_benchmark.models.metrics import Metric, TrialMetrics
 _PROVIDER_MODEL_HARNESSES = frozenset({"amp", "opencode"})
 """Harnesses whose model IDs are ``provider/model``; their labels drop the provider."""
 
-_HARNESS_PROVIDERS = {"claude": "anthropic", "codex": "openai"}
+_HARNESS_PROVIDERS = {"agy": "google", "claude": "anthropic", "codex": "openai"}
 """The provider a harness uses directly; a configured endpoint overrides it (task 9)."""
 
 

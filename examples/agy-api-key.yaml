@@ -1,0 +1,39 @@
+# Google Antigravity CLI (agy) with a Gemini API key.
+#
+# Choose a model slug with `agy models`. The CLI only lists models when the
+# provider is enabled and the key is set. Use an isolated CLI home so this does
+# not overwrite your own settings:
+#
+#   tmp=$(mktemp -d)
+#   mkdir -p "$tmp/.gemini/antigravity-cli"
+#   printf '{"modelProvider":"gemini"}\n' > "$tmp/.gemini/antigravity-cli/settings.json"
+#   HOME="$tmp" GEMINI_API_KEY=... agy models
+#   rm -rf "$tmp"
+#
+# Slugs include the effort level, for example gemini-3.8-flash-medium.
+# `reasoning_effort` is optional; it maps to `--effort` and must be one of
+# low, medium, high, xhigh or max, and the model must support that level.
+#
+# Supply the key on the host. The config names the variable, never its value,
+# and the trial container receives it by name only:
+#
+#   export GEMINI_API_KEY=...
+#   aicsbench run --config examples/agy-api-key.yaml --dry-run
+#   aicsbench run --config examples/agy-api-key.yaml
+task: url-shortener-api
+agents:
+  - agent: agy
+    model: gemini-3.8-flash-medium
+    # reasoning_effort: high
+stacks: [fastapi-latest]
+trials: 1   # raise for a real experiment
+# agy is API-key only: Subscription sign-in needs an interactive login
+# and a Linux keyring, which a fresh trial container does not have. A
+# subscription run is rejected at preflight, not silently billed as API key.
+auth_mode: api_key
+tooling:
+  mode: standard
+randomize_order: true
+seed: 42
+labels:
+  purpose: agy-api-key-smoke

@@ -5,8 +5,8 @@ agents (Codex CLI, Claude Code, OpenCode, and more) are across programming
 languages and frameworks.
 
 > **Status: Phase 5 in progress (public results and submissions).** Trials run in Docker with the
-> built-in Claude Code, Codex CLI and OpenCode adapters
-> ([docs/agents.md](docs/agents.md)). Repair attempts, bounded parallel runs,
+> built-in CLI adapters ([docs/agents.md](docs/agents.md)). Repair attempts,
+> bounded parallel runs,
 > comparison reports, a local dashboard, submission validation and submission
 > pull requests (`aicsbench submit`), and installed language/framework version
 > recording are available, and `aicsbench site export` writes the public site's
@@ -67,11 +67,12 @@ aicsbench dashboard --port 8765
 ```
 
 In results, the agent CLI is called the **harness** (`claude`, `codex`,
-`commandcode`, `opencode`, `amp`); `--by harness_version` compares the versions
-it reported, and `--by` takes up to three comma-separated dimensions. `--tasks`
-(alias `--matrix`) compares the same groups across several tasks: one column
-per task (newest version, or `<id>@<version>`), each exactly the single-task
-comparison, plus an overall success rate, coverage and mean rank per row.
+`commandcode`, `agy`, `opencode`, `amp`); `--by harness_version` compares the
+versions it reported, and `--by` takes up to three comma-separated dimensions.
+`--tasks` (alias `--matrix`) compares the same groups across several tasks: one
+column per task (newest version, or `<id>@<version>`), each exactly the
+single-task comparison, plus an overall success rate, coverage and mean rank
+per row.
 
 `report` and `export` estimate API-equivalent cost from the newest bundled,
 dated OpenRouter catalog snapshot in `src/ai_benchmark/pricing/`, so they work
@@ -191,7 +192,7 @@ src/ai_benchmark/
   cli/            Typer entry point (`aicsbench`)
   config/         Pydantic schemas: tasks, stacks, experiments, platform settings; YAML/JSON loader
   models/         Enums, metric schemas (with explicit availability), result records
-  agents/         AgentAdapter interface, registry, built-in claude/codex/commandcode/opencode/amp adapters
+  agents/         AgentAdapter interface, registry, built-in claude/codex/commandcode/agy/opencode/amp adapters
   environment/    ExecutionEnvironment interface, Docker implementation, per-trial workspaces
   orchestrator/   Planning (randomized, seeded), trial execution, git metrics, JUnit parsing
   dashboard.py     Loopback-only comparison dashboard
@@ -200,6 +201,7 @@ benchmarks/
   tasks/<id>/task.yaml   Benchmark task definitions
   stacks/<id>.yaml       Stack (language + framework + services) definitions
 examples/experiment.yaml Example experiment matrix
+examples/agy-api-key.yaml Example API-key experiment (Google Antigravity)
 tests/                   Unit tests (pytest); tests/integration needs Docker
 ```
 
