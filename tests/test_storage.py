@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from ai_benchmark.errors import ResultStoreError
-from ai_benchmark.models import (
+from aicsbench.errors import ResultStoreError
+from aicsbench.models import (
     AgentRecord,
     AuthMode,
     EnvironmentRecord,
@@ -15,7 +15,7 @@ from ai_benchmark.models import (
     TrialResult,
     TrialStatus,
 )
-from ai_benchmark.storage import JsonResultStore, ResultFilter
+from aicsbench.storage import JsonResultStore, ResultFilter
 
 
 def manifest(run_id: str) -> RunManifest:
@@ -81,7 +81,7 @@ def test_rejects_path_traversal(tmp_path: Path) -> None:
 
 
 def test_resolved_model_and_dimensions() -> None:
-    from ai_benchmark.models import ComparisonDimension, Metric, MetricSource
+    from aicsbench.models import ComparisonDimension, Metric, MetricSource
 
     reported = Metric[str].of("model-x-2026", MetricSource.AGENT_REPORTED)
     assert AgentRecord.resolve_model("model-x", reported) == "model-x-2026"
@@ -178,7 +178,7 @@ def test_model_key_filter_is_key_only(tmp_path: Path) -> None:
 
 
 def test_parse_junit(tmp_path: Path) -> None:
-    from ai_benchmark.orchestrator.junit import parse_junit
+    from aicsbench.orchestrator.junit import parse_junit
 
     f = tmp_path / "j.xml"
     f.write_text(

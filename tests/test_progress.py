@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_benchmark.progress import (
+from aicsbench.progress import (
     AgentHeartbeat,
     BuildHeartbeat,
     format_duration,
@@ -55,7 +55,7 @@ def test_read_progress(tmp_path: Path) -> None:
 def test_heartbeat_logs_while_running(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     path = tmp_path / "agent.stdout.log"
     path.write_text('{"type": "turn.started"}\n')
-    caplog.set_level(logging.INFO, logger="ai_benchmark.progress")
+    caplog.set_level(logging.INFO, logger="aicsbench.progress")
     with AgentHeartbeat("t-1", path, limit_seconds=1800, interval=0.05):
         time.sleep(0.2)
     beats = [r.getMessage() for r in caplog.records]
@@ -67,7 +67,7 @@ def test_heartbeat_logs_while_running(tmp_path: Path, caplog: pytest.LogCaptureF
 def test_heartbeat_disabled_with_zero_interval(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    caplog.set_level(logging.INFO, logger="ai_benchmark.progress")
+    caplog.set_level(logging.INFO, logger="aicsbench.progress")
     with AgentHeartbeat("t-1", tmp_path / "missing.log", limit_seconds=60, interval=0):
         time.sleep(0.05)
     assert not caplog.records
@@ -91,7 +91,7 @@ def test_last_build_step_buildkit_and_classic(tmp_path: Path) -> None:
 def test_build_heartbeat_reports_step(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     path = tmp_path / "build.log"
     path.write_text("#4 [3/6] RUN curl nodejs\n")
-    caplog.set_level(logging.INFO, logger="ai_benchmark.progress")
+    caplog.set_level(logging.INFO, logger="aicsbench.progress")
     with BuildHeartbeat("img:1", path, interval=0.05):
         time.sleep(0.2)
     assert caplog.records

@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from ai_benchmark.models import Metric, MetricAvailability, MetricSource, TrialMetrics
+from aicsbench.models import Metric, MetricAvailability, MetricSource, TrialMetrics
 
 
 def test_default_metrics_are_unavailable_not_zero() -> None:

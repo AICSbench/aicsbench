@@ -35,10 +35,9 @@ subscription (default) or an API key. See
 pip install aicsbench
 ```
 
-If you installed from git before the rename, uninstall the old distribution
-first (`pip uninstall ai-benchmark`) — both distributions own the same
-`ai_benchmark` package and `aicsbench` command, so uninstalling the old one
-after the new install would delete the new files.
+If you installed the old `ai-benchmark` distribution from git, uninstall it
+first (`pip uninstall ai-benchmark`) to avoid conflicts with the `aicsbench`
+command and the legacy adapter import. For Python code, use `import aicsbench`.
 
 ## CLI
 
@@ -75,7 +74,7 @@ single-task comparison, plus an overall success rate, coverage and mean rank
 per row.
 
 `report` and `export` estimate API-equivalent cost from the newest bundled,
-dated OpenRouter catalog snapshot in `src/ai_benchmark/pricing/`, so they work
+dated OpenRouter catalog snapshot in `src/aicsbench/pricing/`, so they work
 offline. The estimate uses OpenRouter's listed base prompt, completion and
 cache-read token rates as a fixed comparison baseline, not an official vendor
 price or an actual bill. Route, time-of-day and context-length overrides,
@@ -188,7 +187,7 @@ result data is published under CC BY 4.0. The bundle format is in
 ## Layout
 
 ```
-src/ai_benchmark/
+src/aicsbench/
   cli/            Typer entry point (`aicsbench`)
   config/         Pydantic schemas: tasks, stacks, experiments, platform settings; YAML/JSON loader
   models/         Enums, metric schemas (with explicit availability), result records
@@ -207,8 +206,10 @@ tests/                   Unit tests (pytest); tests/integration needs Docker
 
 ## Extending
 
-- **New agent:** subclass `ai_benchmark.agents.AgentAdapter` and register it with
-  `@register_agent` or an `ai_benchmark.agents` entry point in your package. No core changes.
+- **New agent:** subclass `aicsbench.agents.AgentAdapter` and register it with
+  `@register_agent` or an `ai_benchmark.agents` entry point in your package. The
+  entry-point group and the legacy `from ai_benchmark.agents import AgentAdapter`
+  import still work for existing plugins. No core changes.
 - **New stack:** add `benchmarks/stacks/<id>.yaml` with a pinned image or Dockerfile, and
   `environment_notes` telling the agent where its database is.
 - **New task:** add `benchmarks/tasks/<id>/task.yaml` and an HTTP acceptance suite in

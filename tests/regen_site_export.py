@@ -16,18 +16,18 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ai_benchmark.config.loader import SpecCatalog
-from ai_benchmark.config.settings import PlatformSettings
-from ai_benchmark.models import Metric, MetricSource, TrialStatus
-from ai_benchmark.models.enums import AuthMode, ToolingMode
-from ai_benchmark.models.results import (
+from aicsbench.config.loader import SpecCatalog
+from aicsbench.config.settings import PlatformSettings
+from aicsbench.models import Metric, MetricSource, TrialStatus
+from aicsbench.models.enums import AuthMode, ToolingMode
+from aicsbench.models.results import (
     AgentRecord,
     EnvironmentRecord,
     RunManifest,
     ToolingRecord,
     TrialResult,
 )
-from ai_benchmark.site.export import export_site
+from aicsbench.site.export import export_site
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DATA = REPO_ROOT / "tests" / "fixtures" / "site-data"

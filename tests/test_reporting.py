@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ai_benchmark import reporting
-from ai_benchmark.cli.app import app
-from ai_benchmark.comparison import compare_trials
-from ai_benchmark.models import (
+from aicsbench import reporting
+from aicsbench.cli.app import app
+from aicsbench.comparison import compare_trials
+from aicsbench.models import (
     AuthMode,
     ComparisonDimension,
     Metric,
@@ -21,9 +21,9 @@ from ai_benchmark.models import (
     TrialResult,
     TrialStatus,
 )
-from ai_benchmark.pricing import SOURCE, Catalog, ModelPrice, default_catalog, load_catalog
-from ai_benchmark.reporting import csv_text, export_trials, render_report
-from ai_benchmark.storage import JsonResultStore, ResultFilter
+from aicsbench.pricing import SOURCE, Catalog, ModelPrice, default_catalog, load_catalog
+from aicsbench.reporting import csv_text, export_trials, render_report
+from aicsbench.storage import JsonResultStore, ResultFilter
 
 from .test_storage import manifest, trial
 
@@ -34,7 +34,7 @@ SNAPSHOT_TIME = "2026-11-21T11:37:56Z"
 def pricing_snapshot() -> Catalog:
     # A refresh can change model coverage and prices without changing report behavior.
     repo = Path(__file__).resolve().parents[1]
-    return load_catalog(repo / "src/ai_benchmark/pricing/openrouter-models-2026-11-21.json")
+    return load_catalog(repo / "src/aicsbench/pricing/openrouter-models-2026-11-21.json")
 
 
 @pytest.fixture(autouse=True)
@@ -524,7 +524,7 @@ def test_openrouter_snapshot_keeps_variants_distinct(pricing_snapshot: Catalog) 
 
 
 def test_default_catalog_loads_latest_bundled_snapshot() -> None:
-    directory = Path(__file__).resolve().parents[1] / "src/ai_benchmark/pricing"
+    directory = Path(__file__).resolve().parents[1] / "src/aicsbench/pricing"
     latest = max(directory.glob("openrouter-models-*.json"))
     assert default_catalog() == load_catalog(latest)
 

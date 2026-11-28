@@ -16,11 +16,11 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-import ai_benchmark.cli.app as cli
-from ai_benchmark.models.enums import TrialStatus
-from ai_benchmark.models.results import RunManifest, TrialResult
-from ai_benchmark.storage.json_store import JsonResultStore
-from ai_benchmark.submission.github import GitHub
+import aicsbench.cli.app as cli
+from aicsbench.models.enums import TrialStatus
+from aicsbench.models.results import RunManifest, TrialResult
+from aicsbench.storage.json_store import JsonResultStore
+from aicsbench.submission.github import GitHub
 
 from .test_submission import DIRS, FIXTURE_BUNDLE
 

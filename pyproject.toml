@@ -29,7 +29,7 @@ dev = [
 ]
 
 [project.scripts]
-aicsbench = "ai_benchmark.cli.app:main"
+aicsbench = "aicsbench.cli.app:main"
 
 # Third-party agent adapters register themselves here, so the core never
 # needs to change when a new agent is added:
@@ -38,7 +38,7 @@ aicsbench = "ai_benchmark.cli.app:main"
 # my-agent = "my_package.adapter:MyAgentAdapter"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ai_benchmark"]
+packages = ["src/aicsbench", "src/ai_benchmark"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -54,7 +54,7 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 # Typer resolves annotations at runtime; keep Optional[...] for clarity there.
-"src/ai_benchmark/cli/*" = ["UP007", "UP045"]
+"src/aicsbench/cli/*" = ["UP007", "UP045"]
 
 [tool.ruff.format]
 # Published acceptance suites are byte-hashed; even formatting changes their identity.

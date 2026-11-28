@@ -27,10 +27,10 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ai_benchmark.pricing import SOURCE, snapshot_filename  # noqa: E402
+from aicsbench.pricing import SOURCE, snapshot_filename  # noqa: E402
 
 KEPT_RATES = ("prompt", "completion", "input_cache_read")
-DEFAULT_DIRECTORY = Path(__file__).resolve().parents[1] / "src" / "ai_benchmark" / "pricing"
+DEFAULT_DIRECTORY = Path(__file__).resolve().parents[1] / "src" / "aicsbench" / "pricing"
 
 
 def fetch_payload() -> dict[str, Any]:

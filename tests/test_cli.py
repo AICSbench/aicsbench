@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ai_benchmark.cli.app import app
+from aicsbench.cli.app import app
 
 from .conftest import REPO_ROOT
 

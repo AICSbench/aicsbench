@@ -36,10 +36,10 @@ jobs:
           import sys
           from pathlib import Path
 
-          from ai_benchmark.pricing import SNAPSHOT_PREFIX, load_catalog, snapshot_filename
+          from aicsbench.pricing import SNAPSHOT_PREFIX, load_catalog, snapshot_filename
 
           candidate = Path(sys.argv[1])
-          current = max(Path('src/ai_benchmark/pricing').glob(f'{SNAPSHOT_PREFIX}*.json'))
+          current = max(Path('src/aicsbench/pricing').glob(f'{SNAPSHOT_PREFIX}*.json'))
           catalog = load_catalog(candidate)
 
           def entries(path):
@@ -76,7 +76,7 @@ jobs:
           token: ${{ secrets.PRICING_REFRESH_TOKEN }}
           branch: automation/openrouter-pricing
           delete-branch: true
-          add-paths: src/ai_benchmark/pricing/openrouter-models-*.json
+          add-paths: src/aicsbench/pricing/openrouter-models-*.json
           commit-message: 'chore: refresh OpenRouter pricing snapshot'
           title: 'chore: refresh OpenRouter pricing snapshot'
           body: |

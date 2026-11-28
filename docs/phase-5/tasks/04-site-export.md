@@ -29,7 +29,7 @@ aicsbench [--tasks-dir DIR] site export --data DIR --out DIR --base-url URL
 
 ## Changes
 
-1. `src/ai_benchmark/site/` (no new dependency; no HTML is produced in
+1. `src/aicsbench/site/` (no new dependency; no HTML is produced in
    this repository):
    - `load.py`: read every bundle under `submissions/` and validate it in
      rebuild mode (`check_catalog=False`, see
@@ -52,7 +52,7 @@ aicsbench [--tasks-dir DIR] site export --data DIR --out DIR --base-url URL
        characters when a task version has more than one.
      - Verified and community runs go in separate sections.
    - `comparison.compare_matrix(trials, rows, tasks, filters)` (in
-     `src/ai_benchmark/comparison.py`, beside `compare_trials`): one column
+     `src/aicsbench/comparison.py`, beside `compare_trials`): one column
      per `(task, task_version)`, and each column is exactly
      `compare_trials(by=rows)` on that task's trials with the same filters,
      including its refusals. A column that is refused carries the refusal

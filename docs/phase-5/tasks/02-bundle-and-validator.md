@@ -10,7 +10,7 @@ bundle is. One implementation, used by both, prevents drift.
 
 ## Changes
 
-1. New package `src/ai_benchmark/submission/`:
+1. New package `src/aicsbench/submission/`:
    - `models.py`: `SubmissionInfo`, `Submitter`, `Problem` exactly as in
      [schemas.md](../schemas.md#submissionjson).
    - `suite.py`: `suite_sha256(task_path_or_spec) -> str`, the algorithm in

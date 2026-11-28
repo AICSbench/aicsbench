@@ -3,9 +3,9 @@
 import json
 from pathlib import Path
 
-from ai_benchmark.dashboard import dashboard_response
-from ai_benchmark.models import Metric, MetricSource, TrialStatus
-from ai_benchmark.storage import JsonResultStore
+from aicsbench.dashboard import dashboard_response
+from aicsbench.models import Metric, MetricSource, TrialStatus
+from aicsbench.storage import JsonResultStore
 
 from .test_storage import manifest, trial
 

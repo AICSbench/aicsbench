@@ -6,15 +6,15 @@ from typing import Any
 
 import pytest
 
-from ai_benchmark.config import AgentAuthConfig, CredentialFile, MountMode, StackSpec
-from ai_benchmark.config.settings import DockerSettings
-from ai_benchmark.environment import AgentImageLayer, ImageInfo
-from ai_benchmark.environment.docker import (
+from aicsbench.config import AgentAuthConfig, CredentialFile, MountMode, StackSpec
+from aicsbench.config.settings import DockerSettings
+from aicsbench.environment import AgentImageLayer, ImageInfo
+from aicsbench.environment.docker import (
     DockerExecutionEnvironment,
     _package_install_script,
     agent_layer_dockerfile,
 )
-from ai_benchmark.errors import ExecutionEnvironmentError
+from aicsbench.errors import ExecutionEnvironmentError
 
 
 class FakeCLI:
@@ -172,7 +172,7 @@ def test_exec_marks_timeout(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("policy", ["never"])
 def test_pull_policy_never(policy: str) -> None:
-    from ai_benchmark.errors import ExecutionEnvironmentError
+    from aicsbench.errors import ExecutionEnvironmentError
 
     e = DockerExecutionEnvironment(DockerSettings(pull_policy=policy), cli=FakeCLI())  # type: ignore[arg-type]
     with pytest.raises(ExecutionEnvironmentError, match="pull_policy=never"):
@@ -180,7 +180,7 @@ def test_pull_policy_never(policy: str) -> None:
 
 
 def test_docker_cli_reads_environment_at_call_time(monkeypatch: Any) -> None:
-    from ai_benchmark.environment.docker import DockerCLI
+    from aicsbench.environment.docker import DockerCLI
 
     cli = DockerCLI("docker", host="unix:///tmp/d.sock")
     monkeypatch.setenv("LATE_SECRET", "s3cret")
@@ -190,7 +190,7 @@ def test_docker_cli_reads_environment_at_call_time(monkeypatch: Any) -> None:
 
 
 def test_docker_cli_never_inherits_stdin(monkeypatch: Any) -> None:
-    from ai_benchmark.environment.docker import DockerCLI
+    from aicsbench.environment.docker import DockerCLI
 
     seen: list[dict[str, Any]] = []
 
@@ -207,7 +207,7 @@ def test_docker_cli_never_inherits_stdin(monkeypatch: Any) -> None:
 
 
 def test_build_streams_to_log_and_reports_failure(monkeypatch: Any, tmp_path: Path) -> None:
-    from ai_benchmark.errors import ExecutionEnvironmentError
+    from aicsbench.errors import ExecutionEnvironmentError
 
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
 
@@ -231,7 +231,7 @@ def test_build_streams_to_log_and_reports_failure(monkeypatch: Any, tmp_path: Pa
 
 
 def test_build_timeout_is_an_infra_error(monkeypatch: Any, tmp_path: Path) -> None:
-    from ai_benchmark.errors import ExecutionEnvironmentError
+    from aicsbench.errors import ExecutionEnvironmentError
 
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
 
@@ -251,8 +251,8 @@ def test_build_timeout_is_an_infra_error(monkeypatch: Any, tmp_path: Path) -> No
 
 
 def test_selected_version_builds_its_own_image_with_the_build_arg() -> None:
-    from ai_benchmark.config import SpecCatalog
-    from ai_benchmark.config.settings import PlatformSettings
+    from aicsbench.config import SpecCatalog
+    from aicsbench.config.settings import PlatformSettings
 
     from .conftest import REPO_ROOT
 
@@ -275,8 +275,8 @@ def test_selected_version_builds_its_own_image_with_the_build_arg() -> None:
 
 
 def test_prerelease_with_uppercase_gets_a_valid_distinct_image_tag() -> None:
-    from ai_benchmark.config import SpecCatalog
-    from ai_benchmark.config.settings import PlatformSettings
+    from aicsbench.config import SpecCatalog
+    from aicsbench.config.settings import PlatformSettings
 
     from .conftest import REPO_ROOT
 

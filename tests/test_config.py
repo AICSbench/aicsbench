@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from ai_benchmark.config import (
+from aicsbench.config import (
     AgentSelection,
     ExperimentConfig,
     McpServerConfig,
@@ -13,9 +13,9 @@ from ai_benchmark.config import (
     ToolingConfig,
     load_task,
 )
-from ai_benchmark.config.settings import PlatformSettings
-from ai_benchmark.errors import ConfigurationError
-from ai_benchmark.models import ToolingMode
+from aicsbench.config.settings import PlatformSettings
+from aicsbench.errors import ConfigurationError
+from aicsbench.models import ToolingMode
 
 STACK = dict(
     id="fastapi",
@@ -211,7 +211,7 @@ def test_shipped_task_has_its_acceptance_suite(settings: PlatformSettings) -> No
 
 @pytest.mark.parametrize("image", ["tester", "tester:latest"])
 def test_tester_image_must_be_pinned(image: str) -> None:
-    from ai_benchmark.config.task import AcceptanceTests
+    from aicsbench.config.task import AcceptanceTests
 
     with pytest.raises(ValueError, match="must be pinned"):
         AcceptanceTests(image=image)

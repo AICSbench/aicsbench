@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from ai_benchmark.agents import AgentAdapter, AgentAvailability, AgentRegistry, AgentTask
-from ai_benchmark.errors import AgentNotFoundError, ConfigurationError
-from ai_benchmark.models import AuthMode
+from aicsbench.agents import AgentAdapter, AgentAvailability, AgentRegistry, AgentTask
+from aicsbench.errors import AgentNotFoundError, ConfigurationError
+from aicsbench.models import AuthMode
 
 from .fakes import FakeAdapter, ScriptedRunner
 
@@ -38,6 +38,23 @@ def test_registry_register_and_create() -> None:
     assert "fake" in reg
     adapter = reg.create("fake", {"x": 1})
     assert adapter.options == {"x": 1}
+
+
+def test_registry_discovers_legacy_plugin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "legacy_plugin.py").write_text(
+        "from ai_benchmark.agents import AgentAdapter\n"
+        "\n"
+        "class LegacyAdapter(AgentAdapter):\n"
+        "    name = 'legacy-plugin'\n"
+    )
+    metadata = tmp_path / "legacy_plugin-1.0.dist-info"
+    metadata.mkdir()
+    (metadata / "entry_points.txt").write_text(
+        "[ai_benchmark.agents]\nlegacy-plugin = legacy_plugin:LegacyAdapter\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    assert AgentRegistry().get_class("legacy-plugin").__bases__ == (AgentAdapter,)
 
 
 def test_registry_rejects_conflicts_and_unknown() -> None:

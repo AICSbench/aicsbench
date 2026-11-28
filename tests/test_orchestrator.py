@@ -2,15 +2,15 @@ from pathlib import Path
 
 import pytest
 
-from ai_benchmark.agents import AgentRegistry
-from ai_benchmark.agents.agy import AgyAdapter
-from ai_benchmark.config import AgentSelection, ExperimentConfig, SpecCatalog
-from ai_benchmark.config.settings import PlatformSettings
-from ai_benchmark.environment import DockerExecutionEnvironment, WorkspaceManager
-from ai_benchmark.errors import PlanningError
-from ai_benchmark.models import AuthMode
-from ai_benchmark.orchestrator import BenchmarkOrchestrator, Stopwatch
-from ai_benchmark.storage import JsonResultStore
+from aicsbench.agents import AgentRegistry
+from aicsbench.agents.agy import AgyAdapter
+from aicsbench.config import AgentSelection, ExperimentConfig, SpecCatalog
+from aicsbench.config.settings import PlatformSettings
+from aicsbench.environment import DockerExecutionEnvironment, WorkspaceManager
+from aicsbench.errors import PlanningError
+from aicsbench.models import AuthMode
+from aicsbench.orchestrator import BenchmarkOrchestrator, Stopwatch
+from aicsbench.storage import JsonResultStore
 
 from .fakes import FAKE_TOKEN_ENV, ApiKeyOnlyAdapter, FakeAdapter
 
@@ -80,7 +80,7 @@ def test_plan_rejects_unsupported_stack(settings: PlatformSettings, tmp_path: Pa
     )
     s = settings.model_copy(update={"stacks_dir": tmp_path})
     with pytest.raises(PlanningError, match="does not support"):
-        from ai_benchmark.orchestrator.plan import build_plan
+        from aicsbench.orchestrator.plan import build_plan
 
         cat = SpecCatalog(s)
         build_plan(config(stacks=["gin"]), cat.get_task("task-management-api"), cat.stacks(), "r1")
@@ -160,7 +160,7 @@ def test_stopwatch() -> None:
 
 
 def test_container_runner_delegates_to_environment(settings: PlatformSettings) -> None:
-    from ai_benchmark.environment import ContainerCommandRunner
+    from aicsbench.environment import ContainerCommandRunner
 
     env = DockerExecutionEnvironment(settings.docker)
     assert isinstance(env.runner(object()), ContainerCommandRunner)  # type: ignore[arg-type]

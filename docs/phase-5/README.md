@@ -97,7 +97,7 @@ maintainer's setup steps.
 2. Read the task file completely. Its **Acceptance criteria** are the
    definition of done; its **Out of scope** list is binding.
 3. Keep the existing architecture: pydantic v2 models with
-   `extra="forbid"`, typer commands in `src/ai_benchmark/cli/app.py`, pure
+   `extra="forbid"`, typer commands in `src/aicsbench/cli/app.py`, pure
    functions that are easy to unit test, no network access in unit tests.
 4. Before opening the PR, the repository's checks must pass. In
    `aicsbench/aicsbench` that is (see CONTRIBUTING.md):

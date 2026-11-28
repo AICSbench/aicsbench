@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from ai_benchmark.agents import (
+from aicsbench.agents import (
     AgentAdapter,
     AgentAvailability,
     AgentCapabilities,
@@ -16,17 +16,17 @@ from ai_benchmark.agents import (
     AgentTask,
     CommandRunner,
 )
-from ai_benchmark.config import AgentAuthConfig
-from ai_benchmark.config.stack import StackSpec
-from ai_benchmark.environment import (
+from aicsbench.config import AgentAuthConfig
+from aicsbench.config.stack import StackSpec
+from aicsbench.environment import (
     CommandResult,
     EnvironmentHandle,
     ExecutionEnvironment,
     ImageInfo,
     Mount,
 )
-from ai_benchmark.errors import ConfigurationError, ExecutionEnvironmentError
-from ai_benchmark.models import AuthMode, Metric, RateLimitEvent, UsageMetrics
+from aicsbench.errors import ConfigurationError, ExecutionEnvironmentError
+from aicsbench.models import AuthMode, Metric, RateLimitEvent, UsageMetrics
 
 FAKE_TOKEN_ENV = "FAKE_AGENT_TOKEN"
 FAKE_API_KEY_ENV = "FAKE_AGENT_API_KEY"
